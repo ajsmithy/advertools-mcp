@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "advertools-mcp"
+version = "0.1.0"
+description = "MCP server wrapping the advertools SEO toolkit: scalable crawls, structured exports, and a post-crawl SEO audit."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "advertools-mcp" }]
+keywords = ["mcp", "seo", "advertools", "scrapy", "crawl", "audit"]
+
+dependencies = [
+    "advertools>=0.18.0",
+    "mcp>=1.2.0",
+    "pandas>=2.0",
+    "pyarrow>=14.0",
+    "openpyxl>=3.1",
+    "lxml>=5.0",
+    "pydantic>=2.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+advertools-mcp = "advertools_mcp.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/advertools_mcp"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/advertools_mcp/audit/advertools_audit_check_catalogue.xlsx" = "advertools_mcp/audit/advertools_audit_check_catalogue.xlsx"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
