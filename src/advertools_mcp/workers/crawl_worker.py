@@ -32,6 +32,22 @@ def _write_result(result_path: str, payload: dict[str, Any]) -> None:
     os.replace(tmp, result_path)
 
 
+def _ensure_scrapy_on_path() -> None:
+    """Make advertools' ``subprocess.run(["scrapy", ...])`` call resolvable.
+
+    advertools shells out to the ``scrapy`` console script, which lives next to
+    the running interpreter (``<venv>/bin``). When the server is launched by
+    absolute path to the venv's python (e.g. by Claude Desktop) the venv is not
+    "activated", so that bin dir is absent from PATH and the bare ``scrapy``
+    command fails with FileNotFoundError. Prepend the interpreter's bin dir so
+    the script is always found.
+    """
+    bindir = os.path.dirname(os.path.abspath(sys.executable))
+    parts = os.environ.get("PATH", "").split(os.pathsep)
+    if bindir and bindir not in parts:
+        os.environ["PATH"] = os.pathsep.join([bindir, *parts]) if parts else bindir
+
+
 def _count_jl_lines(path: str) -> int:
     if not os.path.exists(path):
         return 0
@@ -51,6 +67,8 @@ def _merge_selectors(user: dict | None, defaults: dict) -> dict:
 
 
 def run_crawl(spec: dict[str, Any]) -> dict[str, Any]:
+    _ensure_scrapy_on_path()
+
     import advertools as adv
     import advertools.crawlytics as crawlytics
 
