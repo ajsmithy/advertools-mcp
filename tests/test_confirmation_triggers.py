@@ -91,7 +91,8 @@ async def test_start_crawl_prompts_for_user_agent(settings):
     assert res["status"] == "needs_confirmation"
     codes = {w["code"] for w in res["warnings"]}
     assert "user_agent_unspecified" in codes
-    assert res["resolved_config"]["user_agent"] == "intrepidbot"
+    assert res["resolved_config"]["user_agent"] == settings.default_user_agent
+    assert res["resolved_config"]["user_agent"].startswith("intrepidbot (+")
     assert "job_id" not in res
 
 

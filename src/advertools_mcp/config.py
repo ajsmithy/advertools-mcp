@@ -44,7 +44,9 @@ def _env_list(name: str) -> list[str]:
 CONTACT_URL = os.getenv("ADVTOOLS_CONTACT_URL", "https://www.intrepidonline.com")
 CONTACT_URL_CONFIRMED = _env_bool("ADVTOOLS_CONTACT_URL_CONFIRMED", False)
 
-DEFAULT_USER_AGENT = os.getenv("ADVTOOLS_USER_AGENT", "intrepidbot")
+DEFAULT_USER_AGENT = os.getenv(
+    "ADVTOOLS_USER_AGENT", f"intrepidbot (+{CONTACT_URL})"
+)
 
 
 @dataclass(frozen=True)
