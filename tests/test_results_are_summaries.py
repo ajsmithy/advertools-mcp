@@ -21,7 +21,7 @@ async def test_crawl_then_summary_query_export_and_audit(site_server, settings):
     ]
     started = await call_tool(
         mcp, "start_crawl", urls=urls, follow_links=False,
-        user_agent="testbot", custom_settings=TEST_CRAWL_SETTINGS,
+        user_agent="testbot", crawl_speed=5, custom_settings=TEST_CRAWL_SETTINGS,
     )
     assert started["status"] == "started"
     job_id = started["job_id"]

@@ -36,14 +36,18 @@ def _crawl_custom_settings(
     user_agent: str,
     passthrough: Optional[dict[str, Any]],
 ) -> dict[str, Any]:
+    # download_delay is derived from crawl_speed (1/speed). Pinning per-domain
+    # concurrency to 1 makes crawl_speed a predictable per-host rate cap
+    # (max URLs/sec/host = 1/DOWNLOAD_DELAY); DOWNLOAD_DELAY is also AutoThrottle's
+    # floor, so the crawler never exceeds the requested speed against one host.
     settings_dict: dict[str, Any] = {
         "USER_AGENT": user_agent,
         "ROBOTSTXT_OBEY": obey_robots,
         "CONCURRENT_REQUESTS": concurrent_requests,
-        "CONCURRENT_REQUESTS_PER_DOMAIN": concurrent_requests,
+        "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
         "DOWNLOAD_DELAY": download_delay,
         "AUTOTHROTTLE_ENABLED": True,
-        "AUTOTHROTTLE_TARGET_CONCURRENCY": concurrent_requests,
+        "AUTOTHROTTLE_TARGET_CONCURRENCY": 1,
         "LOG_LEVEL": "ERROR",
     }
     if max_pages:
@@ -101,6 +105,7 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
         exclude_url_regex: Optional[str] = None,
         max_pages: Optional[int] = None,
         max_depth: Optional[int] = None,
+        crawl_speed: Optional[float] = None,
         concurrent_requests: Optional[int] = None,
         download_delay: Optional[float] = None,
         obey_robots: Optional[bool] = None,
@@ -113,12 +118,16 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
         """Start a discovery (spider) or list-mode crawl as an async job.
 
         Set ``follow_links=True`` for discovery, ``False`` for list mode. Returns a
-        ``job_id`` immediately. High-impact configs require ``confirm=true`` after
-        reviewing the echoed resolved config.
+        ``job_id`` immediately. ``crawl_speed`` is the max requests/second per host
+        (default 5). High-impact configs require ``confirm=true`` after reviewing
+        the echoed resolved config.
         """
         url_list = _as_list(url, urls)
         if max_pages is None and not follow_links:
             max_pages = None  # list mode: bounded by url_list
+        speed = crawl_speed if crawl_speed is not None else _settings.default_crawl_speed
+        # crawl_speed drives the delay unless an explicit download_delay is given.
+        delay = download_delay if download_delay is not None else round(1.0 / speed, 4)
         resolved = {
             "url_list": url_list,
             "follow_links": follow_links,
@@ -128,16 +137,26 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
             "max_pages": max_pages if max_pages is not None else _settings.default_max_pages
             if follow_links else max_pages,
             "max_depth": max_depth,
+            "crawl_speed": speed,
+            "crawl_speed_unit": "URLs/second/host (max)",
             "concurrent_requests": concurrent_requests or _settings.default_concurrent_requests,
-            "download_delay": download_delay if download_delay is not None else _settings.default_download_delay,
+            "download_delay": delay,
             "obey_robots": obey_robots if obey_robots is not None else _settings.default_obey_robots,
             "user_agent": user_agent or _settings.default_user_agent,
         }
 
         enforce_domain_allowlist(url_list, _settings)
         warnings = evaluate_crawl_config(resolved, _settings)
-        # Always confirm the crawl's user-agent before launching. If the caller
-        # did not pass one, prompt for it (default 'intrepidbot').
+        # Always confirm the crawl's user-agent and speed before launching.
+        if crawl_speed is None:
+            warnings.insert(0, {
+                "code": "crawl_speed_unspecified",
+                "message": (
+                    f"No crawl speed was specified. The default is "
+                    f"{_settings.default_crawl_speed:g} URLs/second per host. Reply with "
+                    f"the crawl speed you want, or confirm to use the default."
+                ),
+            })
         if user_agent is None:
             warnings.insert(0, {
                 "code": "user_agent_unspecified",

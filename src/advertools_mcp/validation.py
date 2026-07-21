@@ -16,6 +16,8 @@ from .config import Settings
 
 # Above this, concurrency against a single host is considered aggressive.
 HIGH_CONCURRENCY = 8
+# Above this per-host request rate (URLs/sec), a single-host crawl is aggressive.
+HIGH_CRAWL_SPEED = 10.0
 
 
 def _hosts(urls: list[str]) -> set[str]:
@@ -58,14 +60,15 @@ def evaluate_crawl_config(resolved: dict[str, Any], settings: Settings) -> list[
 
     delay = resolved.get("download_delay")
     concurrency = resolved.get("concurrent_requests") or 0
-    if single_host and (delay == 0 or concurrency > HIGH_CONCURRENCY):
+    speed = resolved.get("crawl_speed") or 0
+    if single_host and (delay == 0 or concurrency > HIGH_CONCURRENCY or speed > HIGH_CRAWL_SPEED):
         warnings.append(
             {
                 "code": "aggressive_throttle",
                 "message": (
                     f"High request pressure on a single host "
-                    f"(concurrent_requests={concurrency}, download_delay={delay}). "
-                    "This may overload the target."
+                    f"(crawl_speed={speed} URLs/s, concurrent_requests={concurrency}, "
+                    f"download_delay={delay}). This may overload the target."
                 ),
             }
         )

@@ -103,11 +103,27 @@ async def test_explicit_user_agent_no_prompt(settings, site_server):
 
     res = await call_tool(
         mcp, "start_crawl", url=f"{site_server}/index.html", follow_links=False,
-        user_agent="intrepidbot", custom_settings=TEST_CRAWL_SETTINGS,
+        user_agent="intrepidbot", crawl_speed=5, custom_settings=TEST_CRAWL_SETTINGS,
     )
     assert res["status"] == "started"
     rec = await await_job(srv._manager, res["job_id"])
     assert rec.state == "done", rec.error_message
+
+
+@pytest.mark.asyncio
+async def test_start_crawl_prompts_for_crawl_speed(settings):
+    mcp = build_server(settings)
+    # user_agent given but no crawl_speed -> still prompts for speed (default 5).
+    res = await call_tool(
+        mcp, "start_crawl", urls=["https://example.com/"], follow_links=False,
+        user_agent="bot",
+    )
+    assert res["status"] == "needs_confirmation"
+    codes = {w["code"] for w in res["warnings"]}
+    assert "crawl_speed_unspecified" in codes
+    assert res["resolved_config"]["crawl_speed"] == 5.0
+    # 5 URLs/s => 0.2s delay.
+    assert res["resolved_config"]["download_delay"] == 0.2
 
 
 @pytest.mark.asyncio

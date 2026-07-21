@@ -72,6 +72,10 @@ class Settings:
     default_download_delay: float = field(
         default_factory=lambda: _env_float("ADVTOOLS_DOWNLOAD_DELAY", 0.25)
     )
+    # Crawl speed as a per-host request-rate cap (URLs/second).
+    default_crawl_speed: float = field(
+        default_factory=lambda: _env_float("ADVTOOLS_CRAWL_SPEED", 5.0)
+    )
     default_obey_robots: bool = field(
         default_factory=lambda: _env_bool("ADVTOOLS_OBEY_ROBOTS", True)
     )
