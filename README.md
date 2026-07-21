@@ -129,7 +129,7 @@ response (echoing the resolved config) that you re-issue with `confirm=true`.
 Triggers:
 
 - **no `user_agent` specified** — `start_crawl` always prompts for the crawl's
-  user-agent (default **`intrepidbot`**); reply with one or confirm to accept the default,
+  user-agent (default **`intrepidbot (+https://www.intrepidonline.com)`**); reply with one or confirm to accept the default,
 - a discovery crawl with **no** `max_pages` **and** no `max_depth` (open-ended),
 - `obey_robots` turned **off**,
 - high concurrency or zero delay against a **single host**,
@@ -207,7 +207,7 @@ docker run -p 8000:8000 -v advertools-data:/data/crawls \
 | `ADVTOOLS_CONCURRENT_REQUESTS` | `6` | Default crawl concurrency |
 | `ADVTOOLS_DOWNLOAD_DELAY` | `0.25` | Politeness delay (s) |
 | `ADVTOOLS_OBEY_ROBOTS` | `true` | Default robots.txt obedience |
-| `ADVTOOLS_USER_AGENT` | `intrepidbot` | Default crawler UA (start_crawl prompts to confirm/override it) |
+| `ADVTOOLS_USER_AGENT` | `intrepidbot (+https://www.intrepidonline.com)` | Default crawler UA (start_crawl prompts to confirm/override it) |
 | `ADVTOOLS_CONTACT_URL` | `https://www.intrepidonline.com` | Contact in UA (**flagged "to confirm"**) |
 | `ADVTOOLS_CONTACT_URL_CONFIRMED` | `false` | Set true once the contact URL is verified |
 | `ADVTOOLS_MAX_CONCURRENT_JOBS` | `2` | Running jobs before queueing |
