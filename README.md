@@ -47,8 +47,9 @@ client ──tool──▶ MCP server (always responsive)
 
 **Crawling** (async jobs — return a `job_id` immediately)
 - `start_crawl` — discovery (spider) or list mode; full param surface incl.
-  include/exclude regex, max_pages/depth, concurrency, delay, obey_robots,
-  user_agent, CSS/XPath custom extraction, and a `custom_settings` passthrough.
+  include/exclude regex, max_pages/depth, `crawl_speed` (URLs/sec/host, default 5),
+  concurrency, delay, obey_robots, user_agent, CSS/XPath custom extraction, and a
+  `custom_settings` passthrough.
 - `start_header_crawl` — `crawl_headers` (HEAD only) for fast status sweeps.
 - `start_image_crawl` — `crawl_images` for image discovery/metadata.
 - `crawl_status`, `list_jobs`, `cancel_job` — job lifecycle.
@@ -130,6 +131,8 @@ Triggers:
 
 - **no `user_agent` specified** — `start_crawl` always prompts for the crawl's
   user-agent (default **`intrepidbot (+https://www.intrepidonline.com)`**); reply with one or confirm to accept the default,
+- **no `crawl_speed` specified** — `start_crawl` always prompts for the crawl
+  speed (default **5 URLs/second per host**); reply with a rate or confirm to accept the default,
 - a discovery crawl with **no** `max_pages` **and** no `max_depth` (open-ended),
 - `obey_robots` turned **off**,
 - high concurrency or zero delay against a **single host**,
@@ -205,7 +208,8 @@ docker run -p 8000:8000 -v advertools-data:/data/crawls \
 | `ADVTOOLS_DATA_DIR` | `./data/crawls` | Artefact + job store root |
 | `ADVTOOLS_MAX_PAGES` | `3000` | `CLOSESPIDER_PAGECOUNT` safety cap |
 | `ADVTOOLS_CONCURRENT_REQUESTS` | `6` | Default crawl concurrency |
-| `ADVTOOLS_DOWNLOAD_DELAY` | `0.25` | Politeness delay (s) |
+| `ADVTOOLS_CRAWL_SPEED` | `5.0` | Default crawl speed (max URLs/sec/host); sets delay = 1/speed |
+| `ADVTOOLS_DOWNLOAD_DELAY` | `0.25` | Politeness delay (s); overrides the crawl_speed-derived delay if set |
 | `ADVTOOLS_OBEY_ROBOTS` | `true` | Default robots.txt obedience |
 | `ADVTOOLS_USER_AGENT` | `intrepidbot (+https://www.intrepidonline.com)` | Default crawler UA (start_crawl prompts to confirm/override it) |
 | `ADVTOOLS_CONTACT_URL` | `https://www.intrepidonline.com` | Contact in UA (**flagged "to confirm"**) |
