@@ -20,7 +20,8 @@ async def test_crawl_then_summary_query_export_and_audit(site_server, settings):
         f"{site_server}/about.html",
     ]
     started = await call_tool(
-        mcp, "start_crawl", urls=urls, follow_links=False, custom_settings=TEST_CRAWL_SETTINGS
+        mcp, "start_crawl", urls=urls, follow_links=False,
+        user_agent="testbot", custom_settings=TEST_CRAWL_SETTINGS,
     )
     assert started["status"] == "started"
     job_id = started["job_id"]
@@ -45,9 +46,10 @@ async def test_crawl_then_summary_query_export_and_audit(site_server, settings):
 
     # CSV export returns a path + summary, not contents.
     exp = await call_tool(mcp, "export_crawl_csv", job_id=job_id)
-    assert exp["csv_path"].endswith(".csv")
+    assert exp["csv_path"].endswith("crawl-detail.csv")
     assert exp["rows"] >= 3
     assert "Indexability" in exp["columns"]
+    assert exp["column_count"] >= 50
     assert "content" not in exp  # never inline file contents
 
     # Audit returns audit_id + summary, file stays on disk.

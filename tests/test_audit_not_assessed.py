@@ -97,3 +97,27 @@ def test_no_check_uses_forbidden_state(audit_summary):
     allowed = {"Present", "Not present", "Not assessed", "Heuristic"}
     for num, status in audit_summary.items():
         assert status in allowed, f"#{num} has illegal state {status!r}"
+
+
+def test_workbook_has_descriptions_and_crawl_detail_sheet(tmp_path):
+    from openpyxl import load_workbook
+
+    parquet = _toy_crawl(tmp_path)
+    settings = Settings(data_dir=tmp_path)
+    settings.ensure_dirs()
+    run_audit(parquet, settings, settings.audits_dir)
+    wb = load_workbook(list(settings.audits_dir.glob("*.xlsx"))[0], read_only=True, data_only=True)
+
+    # Crawl Detail is embedded as its own sheet.
+    assert "Crawl Detail" in wb.sheetnames
+    cd = wb["Crawl Detail"]
+    header = [c.value for c in next(cd.iter_rows(max_row=1))]
+    assert header[0] == "Address"
+
+    # Every check row carries a plain-English explanation (column E).
+    ws = wb["Checklist"]
+    header = [c.value for c in next(ws.iter_rows(max_row=1))]
+    assert header[4] == "What it checks & why it matters"
+    rows = list(ws.iter_rows(min_row=2, values_only=True))
+    assert all((r[4] or "").strip() for r in rows if r[0] is not None)
+    wb.close()

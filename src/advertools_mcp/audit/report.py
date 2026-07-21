@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 _STATUS_FILL = {
@@ -37,27 +37,41 @@ def write_report(
     results: list[dict[str, Any]],
     detail_rows: list[dict[str, Any]],
     config,
+    crawl_detail=None,
 ) -> None:
     wb = Workbook()
 
     # ---- Checklist sheet ----
     ws = wb.active
     ws.title = "Checklist"
-    headers = ["#", "Check", "Tier", "Status", "Affected URL count", "Example URLs", "Detection source", "Note"]
+    headers = ["#", "Check", "Tier", "Status", "What it checks & why it matters",
+               "Affected URL count", "Example URLs", "Detection source", "Note"]
     ws.append(headers)
     _style_header(ws, len(headers))
     for r in results:
         ws.append(
             [
-                r["num"], r["check"], r["tier"], r["status"], r["affected_count"],
-                "\n".join(r["example_urls"]), r["detection_source"], r["note"],
+                r["num"], r["check"], r["tier"], r["status"], r.get("description", ""),
+                r["affected_count"], "\n".join(r["example_urls"]), r["detection_source"], r["note"],
             ]
         )
         fill = _STATUS_FILL.get(r["status"])
         if fill:
             ws.cell(row=ws.max_row, column=4).fill = PatternFill("solid", fgColor=fill)
+        ws.cell(row=ws.max_row, column=5).alignment = Alignment(wrap_text=True, vertical="top")
     ws.freeze_panes = "A2"
     _autosize(ws)
+    ws.column_dimensions["E"].width = 70  # description column reads better fixed-width
+
+    # ---- Crawl Detail sheet (the flat crawl-detail export, embedded) ----
+    if crawl_detail is not None and len(crawl_detail):
+        wc = wb.create_sheet("Crawl Detail")
+        wc.append(list(crawl_detail.columns))
+        _style_header(wc, len(crawl_detail.columns))
+        for record in crawl_detail.itertuples(index=False, name=None):
+            wc.append([("" if v is None else v) for v in record])
+        wc.freeze_panes = "B2"
+        _autosize(wc, max_width=60)
 
     # ---- Detail sheet (one row per offending URL) ----
     wd = wb.create_sheet("Detail")
