@@ -451,7 +451,8 @@ def _audit_summary_impl(audit_id: str) -> dict[str, Any]:
             continue
         total += 1
         by_status[status] = by_status.get(status, 0) + 1
-        by_tier.setdefault(tier, {})[status] = by_tier[tier].get(status, 0) + 1
+        tier_counts = by_tier.setdefault(tier, {})
+        tier_counts[status] = tier_counts.get(status, 0) + 1
     wb.close()
     return {
         "audit_id": audit_id,
