@@ -63,23 +63,32 @@ client ──tool──▶ MCP server (always responsive)
 **XML sitemaps** — `fetch_sitemap` (recursive index, news, video; can seed a list crawl).
 **Audit** — `run_audit`, `get_audit_summary`.
 
-## Structured CSV export
+## Crawl-detail export
 
-`export_crawl_csv(job_id)` writes one flat CSV per crawl, modelled on Screaming
-Frog's *Internal* tab with the *All* filter. List-type columns (links, images,
-hreflang, structured-data types) are reduced to counts (plus a delimited string
-where useful) so the file stays one row per URL. Fixed column order:
+`export_crawl_csv(job_id)` writes one flat, wide CSV per crawl —
+**`crawl-detail.csv`** — modelled on Screaming Frog's *Internal* tab (*All*
+filter). List-type columns (links, images, hreflang, headings, structured-data
+types) are reduced to counts and/or first value(s) so the file stays one row per
+URL. The 50+ columns include:
 
 ```
-URL, Status Code, Status, Indexability, Indexability Reason, Title, Title Length,
-Meta Description, Meta Description Length, H1, H1 Count, H2 Count, Meta Robots,
-Canonical, Canonical Is Self, Word Count, Content-Type, Content-Encoding,
-Response Time, Redirect URL, Redirect Type, Crawl Depth, Inlinks, Outlinks,
-External Outlinks, Images, Images Missing Alt, Size (bytes), Hreflang Count,
-Structured Data Types
+Address, Status Code, Status, Indexability, Indexability Reason, Content-Type,
+Content-Encoding, Response Time, Size (bytes), Crawl Depth, Crawl Timestamp,
+Language, Title 1, Title 1 Length, Meta Description 1, Meta Description 1 Length,
+Meta Keywords 1, H1-1, H1-1 Length, H1-2, H1 Count, H2-1, H2-2, H2 Count,
+Meta Robots 1, X-Robots-Tag 1, Meta Refresh 1, Canonical Link Element 1,
+Canonical Is Self, rel=next, rel=prev, amphtml Link Element, Word Count,
+Text Ratio, Inlinks, Unique Inlinks, Outlinks, Unique Outlinks, External Outlinks,
+Unique External Outlinks, Images, Images Missing Alt Text, Hreflang 1,
+Hreflang Count, Redirect URL, Redirect Type, Last-Modified, Server, IP Address,
+Cookies, Structured Data Types, Structured Data Count, URL Length,
+URL Encoded Address
 ```
 
-The tool returns a summary and the file path — never the file contents inline.
+It is named `crawl-detail` (not `internal_all`) to avoid confusion with a genuine
+Screaming Frog export. The tool returns a summary and the file path — never the
+file contents inline. The same table is also embedded as a **Crawl Detail** sheet
+inside the audit workbook.
 
 ## SEO audit (separate post-crawl process)
 
@@ -103,8 +112,12 @@ pass/fail. The only states are: **Present**, **Not present**, **Not assessed**,
 CWV (non-heuristic) and EXTERNAL check reports *Not assessed* when the optional
 sources are off.
 
-Output is an xlsx under `data/crawls/_audits/` with three sheets: **Checklist**
-(one row per check), **Detail** (offending URLs per failed check), and
+Every check row also carries a plain-English **"What it checks & why it matters"**
+explanation, so findings are actionable without prior knowledge of each issue.
+
+Output is an xlsx under `data/crawls/_audits/` with four sheets: **Checklist**
+(one row per check, with its explanation), **Crawl Detail** (the full
+crawl-detail table embedded), **Detail** (offending URLs per failed check), and
 **Summary** (counts by status and tier + the audit configuration used). The full
 file is never returned inline.
 
@@ -115,6 +128,8 @@ proceed on a high-impact config — it returns a structured `needs_confirmation`
 response (echoing the resolved config) that you re-issue with `confirm=true`.
 Triggers:
 
+- **no `user_agent` specified** — `start_crawl` always prompts for the crawl's
+  user-agent (default **`intrepidbot`**); reply with one or confirm to accept the default,
 - a discovery crawl with **no** `max_pages` **and** no `max_depth` (open-ended),
 - `obey_robots` turned **off**,
 - high concurrency or zero delay against a **single host**,
@@ -192,7 +207,7 @@ docker run -p 8000:8000 -v advertools-data:/data/crawls \
 | `ADVTOOLS_CONCURRENT_REQUESTS` | `6` | Default crawl concurrency |
 | `ADVTOOLS_DOWNLOAD_DELAY` | `0.25` | Politeness delay (s) |
 | `ADVTOOLS_OBEY_ROBOTS` | `true` | Default robots.txt obedience |
-| `ADVTOOLS_USER_AGENT` | `intrepidbot-mcp/0.1 (+<contact>)` | Crawler UA |
+| `ADVTOOLS_USER_AGENT` | `intrepidbot` | Default crawler UA (start_crawl prompts to confirm/override it) |
 | `ADVTOOLS_CONTACT_URL` | `https://www.intrepidonline.com` | Contact in UA (**flagged "to confirm"**) |
 | `ADVTOOLS_CONTACT_URL_CONFIRMED` | `false` | Set true once the contact URL is verified |
 | `ADVTOOLS_MAX_CONCURRENT_JOBS` | `2` | Running jobs before queueing |

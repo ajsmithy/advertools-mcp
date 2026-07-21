@@ -33,6 +33,13 @@ DEFAULT_CSS_SELECTORS: dict[str, str] = {
     "preload_href": "link[rel=preload]::attr(href)",
     "head_script_src": "head script[src]::attr(src)",
     "head_stylesheet_href": "head link[rel=stylesheet]::attr(href)",
+    # Richer per-URL detail (Screaming-Frog-style export columns).
+    "html_lang": "html::attr(lang)",
+    "meta_keywords": "meta[name=keywords]::attr(content)",
+    "meta_refresh": "meta[http-equiv=refresh]::attr(content)",
+    "rel_next": "link[rel=next]::attr(href)",
+    "rel_prev": "link[rel=prev]::attr(href)",
+    "amphtml": "link[rel=amphtml]::attr(href)",
 }
 
 DEFAULT_XPATH_SELECTORS: dict[str, str] = {

@@ -82,6 +82,34 @@ async def test_start_crawl_returns_needs_confirmation(settings):
 
 
 @pytest.mark.asyncio
+async def test_start_crawl_prompts_for_user_agent(settings):
+    mcp = build_server(settings)
+    # No user_agent given -> must prompt (not launch), defaulting to 'intrepidbot'.
+    res = await call_tool(
+        mcp, "start_crawl", urls=["https://example.com/"], follow_links=False
+    )
+    assert res["status"] == "needs_confirmation"
+    codes = {w["code"] for w in res["warnings"]}
+    assert "user_agent_unspecified" in codes
+    assert res["resolved_config"]["user_agent"] == "intrepidbot"
+    assert "job_id" not in res
+
+
+@pytest.mark.asyncio
+async def test_explicit_user_agent_no_prompt(settings, site_server):
+    mcp = build_server(settings)
+    from advertools_mcp import server as srv
+
+    res = await call_tool(
+        mcp, "start_crawl", url=f"{site_server}/index.html", follow_links=False,
+        user_agent="intrepidbot", custom_settings=TEST_CRAWL_SETTINGS,
+    )
+    assert res["status"] == "started"
+    rec = await await_job(srv._manager, res["job_id"])
+    assert rec.state == "done", rec.error_message
+
+
+@pytest.mark.asyncio
 async def test_confirm_true_launches(settings, site_server):
     mcp = build_server(settings)
     from advertools_mcp import server as srv

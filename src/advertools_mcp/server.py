@@ -136,10 +136,22 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
 
         enforce_domain_allowlist(url_list, _settings)
         warnings = evaluate_crawl_config(resolved, _settings)
+        # Always confirm the crawl's user-agent before launching. If the caller
+        # did not pass one, prompt for it (default 'intrepidbot').
+        if user_agent is None:
+            warnings.insert(0, {
+                "code": "user_agent_unspecified",
+                "message": (
+                    f"No user-agent was specified. The default is "
+                    f"'{_settings.default_user_agent}'. Reply with the user-agent you "
+                    f"want for this crawl, or confirm to use the default."
+                ),
+            })
         advisories = _contact_advisory(resolved["user_agent"])
         if warnings and not confirm:
             resp = needs_confirmation_response(resolved, warnings)
             resp["advisories"] = advisories
+            resp["user_agent"] = resolved["user_agent"]
             return resp
 
         cs = _crawl_custom_settings(
@@ -310,7 +322,7 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
         if not _settings.csv_export:
             return {"error": "CSV export is disabled (csv_export=false)."}
         record = _require_done(job_id)
-        out_path = str(Path(record.output_parquet).with_name("export_internal_all.csv"))
+        out_path = str(Path(record.output_parquet).with_name(csv_export.OUTPUT_FILENAME))
         return await asyncio.to_thread(csv_export.export_csv, record.output_parquet, out_path)
 
     # ============================================================== ROBOTS

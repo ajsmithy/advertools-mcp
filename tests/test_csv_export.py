@@ -1,8 +1,8 @@
-"""Unit tests for the flat CSV export column derivations."""
+"""Unit tests for the flat crawl-detail export column derivations."""
 
 import pandas as pd
 
-from advertools_mcp.crawl.csv_export import COLUMNS, build_export_frame
+from advertools_mcp.crawl.csv_export import COLUMNS, OUTPUT_FILENAME, build_export_frame
 
 
 def _df():
@@ -22,6 +22,7 @@ def _df():
             "download_latency": [0.1, 0.2, 0.3],
             "depth": [0, 1, 1],
             "size": [100, 200, 50],
+            "html_lang": ["en", "en", ""],
             "links_url": ["https://s.test/b@@https://ext.test/x", "https://s.test/a", ""],
             "links_nofollow": ["False@@False", "False", ""],
             "img_src": ["https://s.test/i.png@@https://s.test/j.png", "", ""],
@@ -32,16 +33,22 @@ def _df():
     )
 
 
-def test_columns_fixed_order_and_count():
+def test_output_filename_is_crawl_detail():
+    assert OUTPUT_FILENAME == "crawl-detail.csv"
+
+
+def test_columns_fixed_order_and_fuller_than_before():
     out = build_export_frame(_df())
     assert list(out.columns) == COLUMNS
+    assert out.columns[0] == "Address"
+    assert len(COLUMNS) >= 50  # substantially fuller than the original 30
     assert len(out) == 3
 
 
 def test_relative_canonical_resolves_to_self():
     out = build_export_frame(_df())
     row_a = out.iloc[0]
-    assert row_a["Canonical Is Self"] is True or row_a["Canonical Is Self"] == True  # noqa: E712
+    assert bool(row_a["Canonical Is Self"]) is True
     assert row_a["Indexability"] == "Indexable"
 
 
@@ -56,13 +63,20 @@ def test_404_is_non_indexable():
     assert out.iloc[2]["Indexability"] == "Non-Indexable"
 
 
-def test_list_columns_reduced_to_counts():
+def test_list_columns_reduced_to_counts_and_first_values():
     out = build_export_frame(_df()).iloc[0]
+    assert out["H1-1"] == "A"
+    assert out["H1-2"] == "A2"
     assert out["H1 Count"] == 2
     assert out["H2 Count"] == 2
     assert out["Images"] == 2
-    assert out["Images Missing Alt"] == 1
+    assert out["Images Missing Alt Text"] == 1
     assert out["Outlinks"] == 2
     assert out["External Outlinks"] == 1
+    assert out["Unique Outlinks"] == 2
+    assert out["Hreflang 1"] == "en"
     assert out["Hreflang Count"] == 2
     assert out["Structured Data Types"] == "Organization"
+    assert out["Structured Data Count"] == 1
+    assert out["Language"] == "en"
+    assert out["URL Length"] == len("https://s.test/a")

@@ -11,9 +11,11 @@ from typing import Any, Optional
 import pandas as pd
 
 from ..config import Settings
+from ..crawl.csv_export import build_export_frame
 from .catalogue import load_catalogue
 from .checks import CHECKS
 from .context import NOT_ASSESSED, AuditContext, CheckResult, not_assessed
+from .descriptions import describe
 from .report import write_report
 
 
@@ -134,6 +136,7 @@ def run_audit(
                 "check": cdef.check,
                 "tier": cdef.tier,
                 "status": res.status,
+                "description": describe(cdef.num),
                 "affected_count": res.affected_count,
                 "example_urls": res.example_urls,
                 "detection_source": res.detection_source,
@@ -148,7 +151,8 @@ def run_audit(
     audit_id = f"audit-{uuid.uuid4().hex[:12]}"
     audits_dir.mkdir(parents=True, exist_ok=True)
     out_path = audits_dir / f"{audit_id}.xlsx"
-    write_report(out_path, results, detail_rows, config)
+    crawl_detail = build_export_frame(df)
+    write_report(out_path, results, detail_rows, config, crawl_detail)
 
     summary = _summarise(results)
     summary.update(
