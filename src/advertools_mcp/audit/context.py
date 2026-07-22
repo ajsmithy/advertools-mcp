@@ -59,6 +59,9 @@ class AuditContext:
     # True if the crawl followed links (discovery), False for list mode,
     # None when the mode is unknown (audit invoked without job metadata).
     is_discovery: Optional[bool] = None
+    # PageSpeed Insights results: {url: {"audits": {audit_id: {score, numericValue}}}}.
+    # None means PSI was disabled (no key) or every call failed.
+    psi_results: Optional[dict] = None
 
     # Optional external sources.
     has_lighthouse: bool = False

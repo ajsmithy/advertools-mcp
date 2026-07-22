@@ -33,7 +33,7 @@ class AuditConfig:
     extra: dict[str, Any] = field(default_factory=dict)
 
     def as_rows(self) -> list[tuple[str, str]]:
-        return [
+        rows = [
             ("audit_url_sample", str(self.audit_url_sample)),
             ("Lighthouse (CWV tier)", "enabled" if self.lighthouse_enabled else "disabled"),
             ("Headless render (RENDER tier)", "enabled" if self.render_enabled else "disabled"),
@@ -42,6 +42,8 @@ class AuditConfig:
             ("robots.txt fetched", "yes" if self.robots_fetched else "no"),
             ("sitemap fetched", "yes" if self.sitemap_fetched else "no"),
         ]
+        rows.extend((str(k), str(v)) for k, v in self.extra.items())
+        return rows
 
 
 def _load_robots(primary_host: str, ua: str) -> tuple[Optional[str], Optional[str]]:
@@ -84,6 +86,20 @@ def _load_sitemap(robots_text: Optional[str], primary_host: str) -> Optional[pd.
     return None
 
 
+def _psi_sample_urls(ctx: AuditContext, n: int) -> list[str]:
+    """Pick up to ``n`` crawled HTML 200 URLs for PSI, shallowest-first so the
+    homepage and top-level templates are assessed before deep pages."""
+    import pandas as pd
+
+    status = pd.to_numeric(ctx.col("status"), errors="coerce")
+    mask = (status == 200) & ctx.is_html()
+    subset = ctx.df.loc[mask.fillna(False), ["url"]].copy()
+    if "depth" in ctx.df.columns:
+        subset["depth"] = pd.to_numeric(ctx.df.loc[subset.index, "depth"], errors="coerce").fillna(99)
+        subset = subset.sort_values("depth", kind="stable")
+    return list(dict.fromkeys(subset["url"].astype(str)))[:n]
+
+
 def run_audit(
     crawl_parquet: str,
     settings: Settings,
@@ -113,6 +129,16 @@ def run_audit(
     ctx.robots_url, ctx.robots_text = robots_url, robots_text
     ctx.sitemap_df = _load_sitemap(robots_text, ctx.primary_host)
 
+    psi_urls_assessed = 0
+    if ctx.has_lighthouse:
+        from . import lighthouse
+
+        sample = _psi_sample_urls(ctx, min(settings.psi_url_sample, settings.audit_url_sample))
+        ctx.psi_results = lighthouse.run_psi_sample(
+            sample, settings.lighthouse_api_key, settings.psi_strategy
+        )
+        psi_urls_assessed = len(ctx.psi_results or {})
+
     config = AuditConfig(
         audit_url_sample=settings.audit_url_sample,
         lighthouse_enabled=ctx.has_lighthouse,
@@ -122,6 +148,10 @@ def run_audit(
         robots_fetched=robots_url is not None,
         sitemap_fetched=ctx.sitemap_df is not None,
     )
+    if ctx.has_lighthouse:
+        config.extra["PSI strategy"] = settings.psi_strategy
+        config.extra["PSI sample cap"] = settings.psi_url_sample
+        config.extra["PSI URLs assessed"] = psi_urls_assessed
 
     results: list[dict[str, Any]] = []
     detail_rows: list[dict[str, Any]] = []
