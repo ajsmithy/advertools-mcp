@@ -46,6 +46,9 @@ def _crawl_custom_settings(
         "CONCURRENT_REQUESTS": concurrent_requests,
         "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
         "DOWNLOAD_DELAY": download_delay,
+        # Scrapy randomises the delay 0.5x-1.5x by default, which lets momentary
+        # bursts exceed the requested rate. Politeness here is a hard cap.
+        "RANDOMIZE_DOWNLOAD_DELAY": False,
         "AUTOTHROTTLE_ENABLED": True,
         "AUTOTHROTTLE_TARGET_CONCURRENCY": 1,
         "LOG_LEVEL": "ERROR",
@@ -447,7 +450,11 @@ def _fetch_sitemap_impl(
 ) -> dict[str, Any]:
     import advertools as adv
 
-    df = adv.sitemap_to_df(sitemap_url, recursive=recursive, request_headers=request_headers)
+    # max_workers=2 keeps recursive sitemap-index fetching polite (advertools
+    # defaults to 8 concurrent requests against the host).
+    df = adv.sitemap_to_df(
+        sitemap_url, max_workers=2, recursive=recursive, request_headers=request_headers
+    )
     out_path = _settings.data_dir / "_sitemaps" / (
         "".join(c if c.isalnum() else "_" for c in sitemap_url)[:80] + ".parquet"
     )

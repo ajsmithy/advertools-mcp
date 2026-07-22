@@ -74,7 +74,9 @@ def _load_sitemap(robots_text: Optional[str], primary_host: str) -> Optional[pd.
         candidates.append(f"{scheme}://{primary_host}/sitemap.xml")
     for url in candidates:
         try:
-            df = adv.sitemap_to_df(url)
+            # max_workers=2 keeps recursive sitemap-index fetching polite
+            # (advertools defaults to 8 concurrent requests against the host).
+            df = adv.sitemap_to_df(url, max_workers=2)
             if df is not None and len(df):
                 return df
         except Exception:  # noqa: BLE001
