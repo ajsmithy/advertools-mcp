@@ -114,6 +114,13 @@ class Settings:
     remote_auth_token: str = field(
         default_factory=lambda: os.getenv("ADVTOOLS_BEARER_TOKEN", "")
     )
+    # Per-client rate limit for the remote transport (requests per window).
+    rate_limit_requests: int = field(
+        default_factory=lambda: _env_int("ADVTOOLS_RATE_LIMIT_REQUESTS", 120)
+    )
+    rate_limit_window: float = field(
+        default_factory=lambda: _env_float("ADVTOOLS_RATE_LIMIT_WINDOW", 60.0)
+    )
     domain_allowlist: list[str] = field(default_factory=lambda: _env_list("ADVTOOLS_DOMAIN_ALLOWLIST"))
     csv_export: bool = field(
         default_factory=lambda: _env_bool("ADVTOOLS_CSV_EXPORT", True)

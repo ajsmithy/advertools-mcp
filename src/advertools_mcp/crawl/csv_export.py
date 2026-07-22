@@ -100,7 +100,8 @@ def build_export_frame(df: pd.DataFrame) -> pd.DataFrame:
     jsonld_type_cols = [c for c in df.columns if c.startswith(S.JSONLD_PREFIX) and c.lower().endswith("@type")]
 
     rows: list[dict[str, Any]] = []
-    for _, r in df.iterrows():
+    # to_dict("records") is far faster than iterrows() and keeps .get() semantics.
+    for r in df.to_dict("records"):
         url = r.get(S.COL_URL)
         status = r.get(S.COL_STATUS)
         h1_items = S.split_list(r.get(S.COL_H1))

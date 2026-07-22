@@ -14,13 +14,16 @@ from .server import build_server
 
 
 def _build_http_app(mcp, settings):
-    """Wrap the streamable-HTTP ASGI app with a bearer-token guard."""
+    """Wrap the streamable-HTTP ASGI app with bearer-token and rate-limit guards."""
     from starlette.applications import Starlette
     from starlette.middleware import Middleware
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.responses import JSONResponse
 
+    from .security import RateLimiter, SecurityError
+
     token = settings.remote_auth_token
+    limiter = RateLimiter(settings.rate_limit_requests, settings.rate_limit_window)
 
     class BearerAuthMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
@@ -29,6 +32,11 @@ def _build_http_app(mcp, settings):
             auth = request.headers.get("authorization", "")
             if not auth.lower().startswith("bearer ") or auth.split(" ", 1)[1].strip() != token:
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            client_id = request.client.host if request.client else "unknown"
+            try:
+                limiter.check(client_id)
+            except SecurityError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=429)
             return await call_next(request)
 
     inner = mcp.streamable_http_app()

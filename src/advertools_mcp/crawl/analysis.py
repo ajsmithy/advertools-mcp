@@ -7,10 +7,25 @@ from typing import Any
 from urllib.parse import urlparse
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 import advertools.crawlytics as crawlytics
 
 from . import schema as S
+
+
+def _read_columns(parquet_path: str, exact: list[str], prefixes: tuple[str, ...] = ()) -> pd.DataFrame:
+    """Read only the named columns (plus any matching a prefix) that exist.
+
+    Avoids materialising heavyweight columns like ``body_text`` when an
+    analysis only needs links/images/redirect data.
+    """
+    available = pq.read_schema(parquet_path).names
+    wanted = [
+        c for c in available
+        if c in exact or any(c.startswith(p) for p in prefixes)
+    ]
+    return pd.read_parquet(parquet_path, columns=wanted)
 
 
 def _internal_hosts(df: pd.DataFrame) -> set[str]:
@@ -26,7 +41,7 @@ def _write_side_table(df: pd.DataFrame, parquet_path: str, suffix: str) -> str |
 
 
 def analyse_links(parquet_path: str) -> dict[str, Any]:
-    df = pd.read_parquet(parquet_path)
+    df = _read_columns(parquet_path, [S.COL_URL], prefixes=("links_",))
     links = crawlytics.links(df)
     if links is None or links.empty:
         return {"total_links": 0, "note": "No links found in crawl."}
@@ -51,7 +66,9 @@ def analyse_links(parquet_path: str) -> dict[str, Any]:
 
 
 def analyse_redirects(parquet_path: str) -> dict[str, Any]:
-    df = pd.read_parquet(parquet_path)
+    df = _read_columns(
+        parquet_path, [S.COL_URL, S.COL_STATUS, "download_latency"], prefixes=("redirect_",)
+    )
     try:
         redirects = crawlytics.redirects(df)
     except Exception:  # noqa: BLE001
@@ -68,7 +85,7 @@ def analyse_redirects(parquet_path: str) -> dict[str, Any]:
 
 
 def analyse_images(parquet_path: str) -> dict[str, Any]:
-    df = pd.read_parquet(parquet_path)
+    df = _read_columns(parquet_path, [S.COL_URL], prefixes=("img_",))
     images = crawlytics.images(df)
     if images is None or images.empty:
         return {"total_images": 0, "note": "No images found in crawl."}
