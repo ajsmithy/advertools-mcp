@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html><head><title>Static Title</title></head>
+<body><h1>JS-powered page</h1><p>Tiny static text.</p>
+<script>
+  // JS-only navigation
+  const nav = document.createElement("nav");
+  for (const p of ["a","b","c"]) {
+    const l = document.createElement("a"); l.href = "/" + p + ".html"; l.textContent = p;
+    nav.appendChild(l);
+  }
+  document.body.appendChild(nav);
+  // Large JS-injected content (hidden from static crawlers)
+  const div = document.createElement("div");
+  div.textContent = "lorem ipsum dolor sit amet ".repeat(60);
+  document.body.appendChild(div);
+  // Title rotation after load
+  setTimeout(() => { document.title = "Rotated Title"; }, 400);
+</script>
+</body></html>

@@ -416,6 +416,8 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
         psi_url_sample: Optional[int] = None,
         psi_strategy: Optional[str] = None,
         gsc_credentials: Optional[str] = None,
+        enable_render: Optional[bool] = None,
+        render_url_sample: Optional[int] = None,
         clear: bool = False,
     ) -> dict[str, Any]:
         """Store audit-tier configuration at runtime (persisted under data_dir).
@@ -431,6 +433,8 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
             return {"error": "psi_strategy must be 'mobile' or 'desktop'."}
         if psi_url_sample is not None and not (1 <= psi_url_sample <= 200):
             return {"error": "psi_url_sample must be between 1 and 200."}
+        if render_url_sample is not None and not (1 <= render_url_sample <= 50):
+            return {"error": "render_url_sample must be between 1 and 50."}
         stored = save_runtime_overrides(
             _settings,
             {
@@ -438,6 +442,8 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
                 "psi_url_sample": psi_url_sample,
                 "psi_strategy": psi_strategy,
                 "gsc_credentials": gsc_credentials,
+                "enable_render": enable_render,
+                "render_url_sample": render_url_sample,
             },
             clear=clear,
         )

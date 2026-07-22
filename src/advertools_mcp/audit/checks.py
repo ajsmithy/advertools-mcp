@@ -269,12 +269,29 @@ def c14(ctx):
 
 @check(15)  # Rendering Errors (RENDER)
 def c15(ctx):
-    return _render_gate(ctx, "Rendering errors require a headless render pass.")
+    rr = ctx.render_results
+    if rr is None:
+        return _render_gate(ctx, "Rendering errors require a headless render pass.")
+    affected = [u for u, r in rr.items() if r.get("page_errors")]
+    return finding(affected, "headless render (uncaught JS errors)",
+                   note=f"{len(rr)} URL(s) rendered headlessly.")
 
 
 @check(16)  # JavaScript-Powered Menu Navigation (RENDER)
 def c16(ctx):
-    return _render_gate(ctx, "Comparing static vs rendered nav requires rendering.")
+    rr = ctx.render_results
+    if rr is None:
+        return _render_gate(ctx, "Comparing static vs rendered nav requires rendering.")
+    static_nav = _static_map(ctx, "nav_links_url")
+    affected = []
+    for url, r in rr.items():
+        if not r.get("ok"):
+            continue
+        static_has_nav = bool(S.split_list(static_nav.get(str(url).rstrip("/"))))
+        if r.get("nav_link_count", 0) > 0 and not static_has_nav:
+            affected.append(str(url))
+    return finding(affected, "static vs rendered nav links", heuristic=True,
+                   note="Nav links exist only after JS runs; crawlers may miss them.")
 
 
 @check(17)  # Infinite Pagination w/o Crawlable Nav (CRAWL+, heuristic)
@@ -323,12 +340,33 @@ def c20(ctx):
 
 @check(21)  # Other Error Preventing Rendering (RENDER)
 def c21(ctx):
-    return _render_gate(ctx, "Render-blocking errors require a headless render pass.")
+    rr = ctx.render_results
+    if rr is None:
+        return _render_gate(ctx, "Render-blocking errors require a headless render pass.")
+    affected = [
+        u for u, r in rr.items()
+        if not r.get("ok") or r.get("rendered_text_len", 0) < 20
+    ]
+    return finding(affected, "headless render (load failure / blank page)",
+                   note=f"{len(rr)} URL(s) rendered headlessly.")
 
 
 @check(22)  # Hidden Uncrawlable Content Behind JS (RENDER)
 def c22(ctx):
-    return _render_gate(ctx, "Diffing static vs rendered content requires rendering.")
+    rr = ctx.render_results
+    if rr is None:
+        return _render_gate(ctx, "Diffing static vs rendered content requires rendering.")
+    static_text = _static_map(ctx, S.COL_BODY_TEXT)
+    affected = []
+    for url, r in rr.items():
+        if not r.get("ok"):
+            continue
+        static_len = len(str(static_text.get(str(url).rstrip("/")) or "").strip())
+        rendered_len = r.get("rendered_text_len", 0)
+        if rendered_len > static_len * 1.5 and rendered_len - static_len > 500:
+            affected.append(str(url))
+    return finding(affected, "static vs rendered text length", heuristic=True,
+                   note="Rendered content is substantially larger than the static HTML.")
 
 
 @check(23)  # Multiple <head> Tags (CRAWL+)
@@ -447,7 +485,13 @@ def c34(ctx):
 
 @check(35)  # Content in ::before / ::after (RENDER)
 def c35(ctx):
-    return _render_gate(ctx, "CSS generated content requires render/CSS parse.")
+    rr = ctx.render_results
+    if rr is None:
+        return _render_gate(ctx, "CSS generated content requires render/CSS parse.")
+    affected = [u for u, r in rr.items()
+                if r.get("ok") and r.get("pseudo_content_count", 0) > 0]
+    return finding(affected, "computed ::before/::after content", heuristic=True,
+                   note="CSS-generated text is not indexable content.")
 
 
 @check(36)  # Google Search Console Activated (EXTERNAL, partial)
@@ -784,7 +828,12 @@ def c70(ctx):
 
 @check(71)  # Intrusive Interstitial Usage (RENDER)
 def c71(ctx):
-    return _render_gate(ctx, "Intrusive interstitials require render / CrUX field data.")
+    rr = ctx.render_results
+    if rr is None:
+        return _render_gate(ctx, "Intrusive interstitials require render / CrUX field data.")
+    affected = [u for u, r in rr.items() if r.get("ok") and r.get("overlay")]
+    return finding(affected, "rendered viewport overlay detection", heuristic=True,
+                   note="A high z-index element covers >=50% of the viewport on load.")
 
 
 @check(72)  # Broken Backlinks (EXTERNAL)
@@ -808,7 +857,15 @@ def c74(ctx):
 
 @check(75)  # JS Rotating Titles (RENDER)
 def c75(ctx):
-    return _render_gate(ctx, "JS-rotated titles require rendering.")
+    rr = ctx.render_results
+    if rr is None:
+        return _render_gate(ctx, "JS-rotated titles require rendering.")
+    affected = [
+        u for u, r in rr.items()
+        if r.get("ok") and r.get("title_at_load") != r.get("title_after_wait")
+    ]
+    return finding(affected, "rendered title observed over time",
+                   note="Title changed via JS after page load.")
 
 
 @check(76)  # Multiple Titles (CRAWL+)
@@ -959,7 +1016,13 @@ def c89(ctx):
 
 @check(90)  # Display:None Content (RENDER)
 def c90(ctx):
-    return _render_gate(ctx, "display:none content requires CSS/render to confirm.")
+    rr = ctx.render_results
+    if rr is None:
+        return _render_gate(ctx, "display:none content requires CSS/render to confirm.")
+    affected = [u for u, r in rr.items()
+                if r.get("ok") and r.get("hidden_text_len", 0) >= 200]
+    return finding(affected, "computed display:none text volume", heuristic=True,
+                   note="Substantial text is hidden with display:none in the rendered page.")
 
 
 @check(91)  # Orphaned URLs in XML Sitemap (CRAWL)
@@ -1002,7 +1065,19 @@ def c91(ctx):
 def _render_gate(ctx, reason: str) -> CheckResult:
     if not ctx.has_render:
         return not_assessed(f"{reason} (rendering disabled)", "headless render")
-    return not_assessed("Rendering enabled but no headless backend is configured.", "headless render")
+    return not_assessed(
+        "Rendering enabled but headless browser unavailable "
+        "(pip install 'advertools-mcp[render]' && playwright install chromium).",
+        "headless render",
+    )
+
+
+def _static_map(ctx, col) -> dict:
+    """Normalised URL -> raw value of a crawl column (for static-vs-rendered diffs)."""
+    return {
+        str(u).rstrip("/"): v
+        for u, v in zip(ctx.col(S.COL_URL), ctx.col(col))
+    }
 
 
 def _cwv_gate(ctx, reason: str) -> CheckResult:

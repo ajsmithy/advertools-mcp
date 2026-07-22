@@ -103,9 +103,33 @@ Behaviour by tier:
 | Tier | Default behaviour |
 |------|-------------------|
 | CRAWL, CRAWL+ | Run by default. CRAWL+ may HEAD-crawl assets, fetch JS/CSS bodies, or test URL variants, capped at `audit_url_sample` (200) URLs. |
-| RENDER | Run only if `ADVTOOLS_ENABLE_RENDER=true`, else **Not assessed (requires rendering)**. |
+| RENDER | Run via a headless Playwright/Chromium pass when `ADVTOOLS_ENABLE_RENDER=true` (see below), else **Not assessed (requires rendering)**. |
 | CWV | Run via the PageSpeed Insights API when `ADVTOOLS_LIGHTHOUSE_API_KEY` is set (see below). Where a check has a static-heuristic part, that part runs regardless and is labelled **Heuristic**. |
 | EXTERNAL | Run only if GSC/backlink data is supplied, else **Not assessed**. |
+
+### Enabling the RENDER tier (headless browser)
+
+The eight RENDER checks (rendering errors, JS-only navigation, hidden content
+behind JS, CSS-generated content, interstitials, JS-rotated titles,
+display:none volume, blank renders) load pages in **headless Chromium** and
+compare the rendered DOM against the static crawl:
+
+```bash
+pip install 'advertools-mcp[render]'   # installs Playwright
+playwright install chromium            # downloads the browser (~120 MB)
+export ADVTOOLS_ENABLE_RENDER=true     # or: configure_audit(enable_render=true)
+```
+
+`run_audit` then renders a sample of crawled HTML pages — shallowest-first,
+capped at `ADVTOOLS_RENDER_URL_SAMPLE` (default 10) — **one page at a time**, so
+the render pass behaves like a single real visitor and stays far below the
+crawl politeness cap. Direct observations (uncaught JS errors, title rotation,
+load failures) report **Present/Not present**; threshold-based comparisons
+(JS-only nav, hidden-content volume, interstitial overlays) report
+**Heuristic**. If Playwright or Chromium is missing, the checks report
+**Not assessed** with install instructions — never a fabricated verdict. On
+hosts where the browser binary lives in a non-standard place, set
+`ADVTOOLS_CHROMIUM_PATH`.
 
 ### Enabling the CWV tier (PageSpeed Insights)
 
@@ -260,13 +284,15 @@ client supply audit-tier settings at runtime; they persist under `data_dir`
 ```
 configure_audit(lighthouse_api_key="AIza…")            # enable the CWV tier
 configure_audit(psi_url_sample=10, psi_strategy="desktop")
+configure_audit(enable_render=true, render_url_sample=10)   # RENDER tier
 configure_audit(clear=true)                            # reset overrides
 run_audit(job_id, lighthouse_api_key="AIza…")          # or one run only
 ```
 
 Responses mask secrets (only the last 4 characters are echoed). **Security
 boundary:** only audit-tier keys (`lighthouse_api_key`, `psi_url_sample`,
-`psi_strategy`, `gsc_credentials`) can be set this way — the domain allowlist,
+`psi_strategy`, `gsc_credentials`, `enable_render`, `render_url_sample`) can be
+set this way — the domain allowlist,
 bearer token, robots behaviour, and rate limits are environment-only, so a
 compromised or prompt-injected client cannot weaken them. Since the key passes
 through the agent conversation, use a Google API key **restricted to the
@@ -291,7 +317,9 @@ PageSpeed Insights API** so exposure carries minimal risk.
 | `ADVTOOLS_LIGHTHOUSE_API_KEY` | _(blank)_ | Enables CWV tier (PageSpeed Insights) |
 | `ADVTOOLS_PSI_URL_SAMPLE` | `20` | Max URLs given a Lighthouse pass per audit (~15s each) |
 | `ADVTOOLS_PSI_STRATEGY` | `mobile` | PSI strategy: `mobile` or `desktop` |
-| `ADVTOOLS_ENABLE_RENDER` | `false` | Enables RENDER tier |
+| `ADVTOOLS_ENABLE_RENDER` | `false` | Enables RENDER tier (needs `[render]` extra + chromium) |
+| `ADVTOOLS_RENDER_URL_SAMPLE` | `10` | Max pages rendered headlessly per audit |
+| `ADVTOOLS_CHROMIUM_PATH` | _(blank)_ | Explicit Chromium binary path if auto-detection fails |
 | `ADVTOOLS_GSC_CREDENTIALS` | _(blank)_ | Enables EXTERNAL tier |
 | `ADVTOOLS_TRANSPORT` | `stdio` | `stdio` or `http` |
 | `ADVTOOLS_BEARER_TOKEN` | _(blank)_ | Required for remote |

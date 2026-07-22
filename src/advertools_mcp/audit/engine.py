@@ -139,6 +139,16 @@ def run_audit(
         )
         psi_urls_assessed = len(ctx.psi_results or {})
 
+    render_urls_assessed = 0
+    if ctx.has_render:
+        from . import render as render_mod
+
+        sample = _psi_sample_urls(ctx, min(settings.render_url_sample, settings.audit_url_sample))
+        ctx.render_results = render_mod.run_render_sample(
+            sample, settings.default_user_agent, chromium_path=settings.chromium_path
+        )
+        render_urls_assessed = len(ctx.render_results or {})
+
     config = AuditConfig(
         audit_url_sample=settings.audit_url_sample,
         lighthouse_enabled=ctx.has_lighthouse,
@@ -152,6 +162,9 @@ def run_audit(
         config.extra["PSI strategy"] = settings.psi_strategy
         config.extra["PSI sample cap"] = settings.psi_url_sample
         config.extra["PSI URLs assessed"] = psi_urls_assessed
+    if ctx.has_render:
+        config.extra["Render sample cap"] = settings.render_url_sample
+        config.extra["Render URLs assessed"] = render_urls_assessed
 
     results: list[dict[str, Any]] = []
     detail_rows: list[dict[str, Any]] = []
