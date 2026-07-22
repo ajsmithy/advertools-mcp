@@ -56,6 +56,9 @@ class AuditContext:
     robots_url: Optional[str] = None
     sitemap_df: Optional[pd.DataFrame] = None
     second_ua_df: Optional[pd.DataFrame] = None  # diff crawl (cloaking/mobile)
+    # True if the crawl followed links (discovery), False for list mode,
+    # None when the mode is unknown (audit invoked without job metadata).
+    is_discovery: Optional[bool] = None
 
     # Optional external sources.
     has_lighthouse: bool = False

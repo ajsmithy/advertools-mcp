@@ -90,6 +90,7 @@ def run_audit(
     audits_dir: Path,
     has_backlinks: bool = False,
     catalogue_path: str | None = None,
+    is_discovery: bool | None = None,
 ) -> dict[str, Any]:
     """Run the full audit over a saved crawl. Returns a compact summary dict."""
     if not Path(crawl_parquet).exists():
@@ -106,6 +107,7 @@ def run_audit(
         has_render=bool(settings.enable_render),
         has_gsc=bool(settings.gsc_credentials),
         has_backlinks=has_backlinks,
+        is_discovery=is_discovery,
     )
     robots_url, robots_text = _load_robots(ctx.primary_host, settings.default_user_agent)
     ctx.robots_url, ctx.robots_text = robots_url, robots_text
