@@ -94,7 +94,7 @@ inside the audit workbook.
 ## SEO audit (separate post-crawl process)
 
 `run_audit(job_id)` runs only after a crawl exists. It never crawls; it analyses
-the saved crawl plus already-fetched robots/sitemap data. The 90 checks are read
+the saved crawl plus already-fetched robots/sitemap data. The 91 checks are read
 from `advertools_audit_check_catalogue.xlsx`, each tagged with a feasibility
 tier (CRAWL, CRAWL+, RENDER, CWV, EXTERNAL).
 
@@ -115,6 +115,11 @@ sources are off.
 
 Every check row also carries a plain-English **"What it checks & why it matters"**
 explanation, so findings are actionable without prior knowledge of each issue.
+
+The audit includes **orphan detection** (check #91): sitemap URLs that the crawl
+neither fetched nor found linked from any page. Because a list-mode crawl can't
+prove a URL is unlinked, this check runs only on discovery (link-following)
+crawls and reports *Not assessed* otherwise.
 
 Output is an xlsx under `data/crawls/_audits/` with four sheets: **Checklist**
 (one row per check, with its explanation), **Crawl Detail** (the full

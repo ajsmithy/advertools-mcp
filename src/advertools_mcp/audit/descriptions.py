@@ -98,6 +98,7 @@ DESCRIPTIONS: dict[int, str] = {
     88: "Checks whether heavy third-party embeds are lazy-loaded with facades, reducing their performance impact.",
     89: "Detects the same script loaded more than once on a page, wasting bandwidth and slowing execution.",
     90: "Detects content hidden with display:none. Hidden content carries little/no SEO value and may signal cloaking if abused.",
+    91: "Finds sitemap URLs the discovery crawl neither reached nor found linked from any page (orphans). Orphaned pages get no internal link equity and are harder for search engines to discover and rank.",
 }
 
 

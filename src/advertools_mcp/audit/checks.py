@@ -1,4 +1,4 @@
-"""Implementations for all 90 catalogue checks, keyed by check number.
+"""Implementations for all catalogue checks (91), keyed by check number.
 
 Each function takes an :class:`AuditContext` and returns a :class:`CheckResult`
 using only the four permitted states. Checks that cannot be evaluated (optional
@@ -937,6 +937,42 @@ def c89(ctx):
 @check(90)  # Display:None Content (RENDER)
 def c90(ctx):
     return _render_gate(ctx, "display:none content requires CSS/render to confirm.")
+
+
+@check(91)  # Orphaned URLs in XML Sitemap (CRAWL)
+def c91(ctx):
+    if ctx.sitemap_df is None or "loc" not in ctx.sitemap_df.columns:
+        return not_assessed("No sitemap data available.", "sitemap vs crawl link graph")
+    if ctx.is_discovery is None:
+        return not_assessed(
+            "Crawl mode unknown; orphan detection requires a discovery (link-following) crawl.",
+            "sitemap vs crawl link graph",
+        )
+    if not ctx.is_discovery:
+        return not_assessed(
+            "List-mode crawl: only seeded URLs were fetched, so a sitemap URL being "
+            "absent does not prove it is unlinked. Re-run with a discovery crawl.",
+            "sitemap vs crawl link graph",
+        )
+    # A sitemap URL is orphaned if the discovery crawl neither reached it nor
+    # saw any internal link pointing at it.
+    known = {str(u).rstrip("/") for u in ctx.col(S.COL_URL)}
+    for raw in ctx.col(S.COL_LINKS_URL):
+        for link in S.split_list(raw):
+            known.add(str(link).rstrip("/"))
+    orphans = [
+        str(loc)
+        for loc in ctx.sitemap_df["loc"].astype(str)
+        if loc.rstrip("/") not in known
+    ]
+    return finding(
+        orphans,
+        "sitemap vs crawl link graph",
+        note=(
+            "Sitemap URLs the discovery crawl neither fetched nor found linked. "
+            "Most reliable when the crawl completed without hitting max_pages."
+        ),
+    )
 
 
 # ------------------------------------------------------------ shared routines

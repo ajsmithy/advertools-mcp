@@ -381,8 +381,14 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
         from .audit.engine import run_audit as _run
 
         record = _require_done(job_id)
+        follow_links = record.params.get("follow_links")
         return await asyncio.to_thread(
-            _run, record.output_parquet, _settings, _settings.audits_dir, has_backlinks
+            _run,
+            record.output_parquet,
+            _settings,
+            _settings.audits_dir,
+            has_backlinks=has_backlinks,
+            is_discovery=bool(follow_links) if follow_links is not None else None,
         )
 
     @mcp.tool()

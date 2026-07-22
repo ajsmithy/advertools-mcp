@@ -56,13 +56,13 @@ async def test_crawl_then_summary_query_export_and_audit(site_server, settings):
     audit = await call_tool(mcp, "run_audit", job_id=job_id)
     assert audit["audit_id"].startswith("audit-")
     assert audit["audit_xlsx"].endswith(".xlsx")
-    assert audit["total_checks"] == 90
+    assert audit["total_checks"] == 91
 
     # get_audit_summary re-reads the workbook and groups by tier without error.
     asum = await call_tool(mcp, "get_audit_summary", audit_id=audit["audit_id"])
-    assert asum["total_checks"] == 90
+    assert asum["total_checks"] == 91
     assert set(asum["counts_by_tier"]) == {"CRAWL", "CRAWL+", "RENDER", "CWV", "EXTERNAL"}
-    assert sum(asum["counts_by_status"].values()) == 90
+    assert sum(asum["counts_by_status"].values()) == 91
     assert "rows" not in audit  # no raw audit rows inline
 
 
