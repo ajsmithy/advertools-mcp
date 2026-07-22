@@ -14,7 +14,13 @@ from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from .config import Settings, get_settings
+from .config import (
+    Settings,
+    get_settings,
+    load_runtime_overrides,
+    save_runtime_overrides,
+    with_runtime_overrides,
+)
 from .crawl import analysis, csv_export, parquet_query, summary
 from .jobs import JobKind, JobManager, JobState, JobStore
 from .security import enforce_domain_allowlist
@@ -376,20 +382,74 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
 
     # ============================================================== AUDIT
     @mcp.tool()
-    async def run_audit(job_id: str, has_backlinks: bool = False) -> dict[str, Any]:
-        """Run the post-crawl SEO audit over a saved crawl. Returns audit_id + summary."""
+    async def run_audit(
+        job_id: str,
+        has_backlinks: bool = False,
+        lighthouse_api_key: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Run the post-crawl SEO audit over a saved crawl. Returns audit_id + summary.
+
+        ``lighthouse_api_key`` optionally enables the CWV tier for this run only;
+        use configure_audit to store it persistently instead.
+        """
+        import dataclasses
+
         from .audit.engine import run_audit as _run
 
         record = _require_done(job_id)
         follow_links = record.params.get("follow_links")
+        effective = with_runtime_overrides(_settings)
+        if lighthouse_api_key:
+            effective = dataclasses.replace(effective, lighthouse_api_key=lighthouse_api_key)
         return await asyncio.to_thread(
             _run,
             record.output_parquet,
-            _settings,
+            effective,
             _settings.audits_dir,
             has_backlinks=has_backlinks,
             is_discovery=bool(follow_links) if follow_links is not None else None,
         )
+
+    @mcp.tool()
+    async def configure_audit(
+        lighthouse_api_key: Optional[str] = None,
+        psi_url_sample: Optional[int] = None,
+        psi_strategy: Optional[str] = None,
+        gsc_credentials: Optional[str] = None,
+        clear: bool = False,
+    ) -> dict[str, Any]:
+        """Store audit-tier configuration at runtime (persisted under data_dir).
+
+        For deployments where the server's environment variables cannot be
+        edited: an MCP client can supply the PageSpeed Insights API key (CWV
+        tier), PSI sample/strategy, or GSC credentials here, and every later
+        run_audit uses them — surviving restarts. ``clear=true`` resets the
+        stored overrides first. Security-critical settings (domain allowlist,
+        bearer token, robots behaviour, rate limits) can NOT be changed here.
+        """
+        if psi_strategy is not None and psi_strategy not in ("mobile", "desktop"):
+            return {"error": "psi_strategy must be 'mobile' or 'desktop'."}
+        if psi_url_sample is not None and not (1 <= psi_url_sample <= 200):
+            return {"error": "psi_url_sample must be between 1 and 200."}
+        stored = save_runtime_overrides(
+            _settings,
+            {
+                "lighthouse_api_key": lighthouse_api_key,
+                "psi_url_sample": psi_url_sample,
+                "psi_strategy": psi_strategy,
+                "gsc_credentials": gsc_credentials,
+            },
+            clear=clear,
+        )
+        return {
+            "status": "saved",
+            "active_overrides": {k: _mask_secret(k, v) for k, v in stored.items()},
+            "note": (
+                "Overrides persist across server restarts and apply to every "
+                "future run_audit. Secrets are stored (0600) under the data "
+                "directory and never echoed back in full."
+            ),
+        }
 
     @mcp.tool()
     async def get_audit_summary(audit_id: str) -> dict[str, Any]:
@@ -400,6 +460,14 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
 
 
 # ----------------------------------------------------------- impl (threaded)
+def _mask_secret(key: str, value) -> str:
+    """Mask secret values in tool responses (show only a recognisable tail)."""
+    if key in ("lighthouse_api_key", "gsc_credentials"):
+        text = str(value)
+        return f"…{text[-4:]}" if len(text) > 8 else "(set)"
+    return str(value)
+
+
 def _contact_advisory(user_agent: str) -> list[str]:
     out: list[str] = []
     if not _settings.contact_url_confirmed and _settings.contact_url in user_agent:
