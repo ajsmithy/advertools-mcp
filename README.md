@@ -250,6 +250,28 @@ docker run -p 8000:8000 -v advertools-data:/data/crawls \
   -e ADVTOOLS_DOMAIN_ALLOWLIST=example.com advertools-mcp:0.1
 ```
 
+## Runtime configuration (hosts without env access)
+
+Some deployments — e.g. the server embedded in a managed agent host — don't let
+you edit environment variables. The **`configure_audit`** tool lets the MCP
+client supply audit-tier settings at runtime; they persist under `data_dir`
+(mode 0600) and survive restarts:
+
+```
+configure_audit(lighthouse_api_key="AIza…")            # enable the CWV tier
+configure_audit(psi_url_sample=10, psi_strategy="desktop")
+configure_audit(clear=true)                            # reset overrides
+run_audit(job_id, lighthouse_api_key="AIza…")          # or one run only
+```
+
+Responses mask secrets (only the last 4 characters are echoed). **Security
+boundary:** only audit-tier keys (`lighthouse_api_key`, `psi_url_sample`,
+`psi_strategy`, `gsc_credentials`) can be set this way — the domain allowlist,
+bearer token, robots behaviour, and rate limits are environment-only, so a
+compromised or prompt-injected client cannot weaken them. Since the key passes
+through the agent conversation, use a Google API key **restricted to the
+PageSpeed Insights API** so exposure carries minimal risk.
+
 ## Configuration reference
 
 | Env var | Default | Meaning |

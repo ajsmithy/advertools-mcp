@@ -163,3 +163,65 @@ def get_settings() -> Settings:
         _settings = Settings()
         _settings.ensure_dirs()
     return _settings
+
+
+# --------------------------------------------------------------- runtime config
+# Some deployments (e.g. a managed agent host) cannot set environment variables.
+# A small persisted overlay lets an MCP client supply audit-tier settings at
+# runtime via the configure_audit tool. Only these keys may be overridden —
+# security-critical settings (domain allowlist, bearer token, robots behaviour,
+# rate limits) are deliberately excluded and stay environment-only.
+RUNTIME_OVERRIDE_KEYS = frozenset(
+    {"lighthouse_api_key", "psi_url_sample", "psi_strategy", "gsc_credentials"}
+)
+_RUNTIME_CONFIG_FILENAME = "_runtime_config.json"
+
+
+def _runtime_config_path(settings: Settings) -> Path:
+    return settings.data_dir / _RUNTIME_CONFIG_FILENAME
+
+
+def load_runtime_overrides(settings: Settings) -> dict:
+    """Read the persisted overlay, keeping only whitelisted keys."""
+    import json
+
+    path = _runtime_config_path(settings)
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return {k: v for k, v in data.items() if k in RUNTIME_OVERRIDE_KEYS}
+
+
+def save_runtime_overrides(settings: Settings, updates: dict, clear: bool = False) -> dict:
+    """Merge (or reset) the overlay and persist it with owner-only permissions."""
+    import json
+
+    current = {} if clear else load_runtime_overrides(settings)
+    current.update(
+        {k: v for k, v in updates.items() if v is not None and k in RUNTIME_OVERRIDE_KEYS}
+    )
+    settings.ensure_dirs()
+    path = _runtime_config_path(settings)
+    fd = os.open(str(path) + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        json.dump(current, fh, indent=2)
+    os.replace(str(path) + ".tmp", path)
+    return current
+
+
+def with_runtime_overrides(settings: Settings) -> Settings:
+    """Return settings with the persisted overlay applied (types coerced)."""
+    import dataclasses
+
+    overrides = load_runtime_overrides(settings)
+    if not overrides:
+        return settings
+    if "psi_url_sample" in overrides:
+        try:
+            overrides["psi_url_sample"] = int(overrides["psi_url_sample"])
+        except (TypeError, ValueError):
+            overrides.pop("psi_url_sample")
+    return dataclasses.replace(settings, **overrides)
