@@ -110,6 +110,14 @@ class Settings:
     enable_render: bool = field(
         default_factory=lambda: _env_bool("ADVTOOLS_ENABLE_RENDER", False)
     )
+    # A render loads a page like a real visitor (all subresources), so the
+    # sample is small and pages render one at a time.
+    render_url_sample: int = field(
+        default_factory=lambda: _env_int("ADVTOOLS_RENDER_URL_SAMPLE", 10)
+    )
+    chromium_path: str = field(
+        default_factory=lambda: os.getenv("ADVTOOLS_CHROMIUM_PATH", "")
+    )
     gsc_credentials: str = field(
         default_factory=lambda: os.getenv("ADVTOOLS_GSC_CREDENTIALS", "")
     )
@@ -172,7 +180,14 @@ def get_settings() -> Settings:
 # security-critical settings (domain allowlist, bearer token, robots behaviour,
 # rate limits) are deliberately excluded and stay environment-only.
 RUNTIME_OVERRIDE_KEYS = frozenset(
-    {"lighthouse_api_key", "psi_url_sample", "psi_strategy", "gsc_credentials"}
+    {
+        "lighthouse_api_key",
+        "psi_url_sample",
+        "psi_strategy",
+        "gsc_credentials",
+        "enable_render",
+        "render_url_sample",
+    }
 )
 _RUNTIME_CONFIG_FILENAME = "_runtime_config.json"
 
@@ -219,9 +234,12 @@ def with_runtime_overrides(settings: Settings) -> Settings:
     overrides = load_runtime_overrides(settings)
     if not overrides:
         return settings
-    if "psi_url_sample" in overrides:
-        try:
-            overrides["psi_url_sample"] = int(overrides["psi_url_sample"])
-        except (TypeError, ValueError):
-            overrides.pop("psi_url_sample")
+    for int_key in ("psi_url_sample", "render_url_sample"):
+        if int_key in overrides:
+            try:
+                overrides[int_key] = int(overrides[int_key])
+            except (TypeError, ValueError):
+                overrides.pop(int_key)
+    if "enable_render" in overrides:
+        overrides["enable_render"] = bool(overrides["enable_render"])
     return dataclasses.replace(settings, **overrides)

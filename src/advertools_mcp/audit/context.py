@@ -62,6 +62,9 @@ class AuditContext:
     # PageSpeed Insights results: {url: {"audits": {audit_id: {score, numericValue}}}}.
     # None means PSI was disabled (no key) or every call failed.
     psi_results: Optional[dict] = None
+    # Headless render results: {url: metrics dict} from audit.render.
+    # None means rendering was disabled or the browser stack is unavailable.
+    render_results: Optional[dict] = None
 
     # Optional external sources.
     has_lighthouse: bool = False
