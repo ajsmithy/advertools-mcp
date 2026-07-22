@@ -13,6 +13,7 @@ CRAWL+ asset checks.
 from __future__ import annotations
 
 import re
+from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
@@ -351,21 +352,29 @@ def c24(ctx):
 # --------------------------------------------------------------------- CWV
 @check(25)
 def c25(ctx):
-    return _cwv_gate(ctx, "Largest Contentful Paint requires Lighthouse/CrUX.")
+    res = _psi_assess(ctx, ("largest-contentful-paint",),
+                      lambda e: (e.get("numericValue") or 0) > 2500)
+    return res or _cwv_gate(ctx, "Largest Contentful Paint requires Lighthouse/CrUX.")
 
 
 @check(26)
 def c26(ctx):
-    return _cwv_gate(ctx, "Cumulative Layout Shift requires Lighthouse/CrUX.")
+    res = _psi_assess(ctx, ("cumulative-layout-shift",),
+                      lambda e: (e.get("numericValue") or 0) > 0.1)
+    return res or _cwv_gate(ctx, "Cumulative Layout Shift requires Lighthouse/CrUX.")
 
 
 @check(27)
 def c27(ctx):
-    return _cwv_gate(ctx, "Properly sized images requires rendered vs intrinsic size (Lighthouse).")
+    res = _psi_assess(ctx, ("uses-responsive-images",), _binary_fail)
+    return res or _cwv_gate(ctx, "Properly sized images requires rendered vs intrinsic size (Lighthouse).")
 
 
 @check(28)  # Eliminate Render-Blocking Resources (CWV, partial heuristic)
 def c28(ctx):
+    res = _psi_assess(ctx, ("render-blocking-resources",), _binary_fail)
+    if res is not None:
+        return res
     bad = []
     styles_col = (
         ctx.df["head_stylesheet_href"]
@@ -382,6 +391,9 @@ def c28(ctx):
 
 @check(29)  # Efficiently Encode Images (CWV partial)
 def c29(ctx):
+    res = _psi_assess(ctx, ("uses-optimized-images",), _binary_fail)
+    if res is not None:
+        return res
     # Heuristic: presence of large legacy-format images by extension.
     legacy = []
     for url, imgs in _list_col_items(ctx, S.COL_IMG_SRC):
@@ -618,6 +630,9 @@ def c52(ctx):
 
 @check(53)  # Use Video Formats for Animated Content (CWV partial)
 def c53(ctx):
+    res = _psi_assess(ctx, ("efficient-animated-content",), _binary_fail)
+    if res is not None:
+        return res
     gifs = []
     for url, imgs in _list_col_items(ctx, S.COL_IMG_SRC):
         if any(str(i).lower().split("?")[0].endswith(".gif") for i in imgs):
@@ -897,6 +912,9 @@ def c84(ctx):
 
 @check(85)  # Next-Gen Images (CWV partial)
 def c85(ctx):
+    res = _psi_assess(ctx, ("modern-image-formats",), _binary_fail)
+    if res is not None:
+        return res
     legacy = []
     for url, imgs in _list_col_items(ctx, S.COL_IMG_SRC):
         exts = [str(i).lower().split("?")[0] for i in imgs]
@@ -907,6 +925,9 @@ def c85(ctx):
 
 @check(86)  # Preload Key Requests (CWV partial)
 def c86(ctx):
+    res = _psi_assess(ctx, ("uses-rel-preload",), _binary_fail)
+    if res is not None:
+        return res
     have = ctx.urls_where(ctx.col("preload_href").notna() &
                           ctx.col("preload_href").astype(str).ne("nan"))
     # Partial: presence of preload is a positive signal; report heuristically.
@@ -916,12 +937,14 @@ def c86(ctx):
 
 @check(87)  # Preload LCP (CWV)
 def c87(ctx):
-    return _cwv_gate(ctx, "Preloading the LCP element requires LCP identification (render).")
+    res = _psi_assess(ctx, ("prioritize-lcp-image", "preload-lcp-image"), _binary_fail)
+    return res or _cwv_gate(ctx, "Preloading the LCP element requires LCP identification (render).")
 
 
 @check(88)  # Lazy Load Third-Party with Facades (CWV)
 def c88(ctx):
-    return _cwv_gate(ctx, "Third-party facade detection requires Lighthouse.")
+    res = _psi_assess(ctx, ("third-party-facades",), _binary_fail)
+    return res or _cwv_gate(ctx, "Third-party facade detection requires Lighthouse.")
 
 
 @check(89)  # Duplicate Scripts Loaded (CRAWL+)
@@ -985,8 +1008,39 @@ def _render_gate(ctx, reason: str) -> CheckResult:
 def _cwv_gate(ctx, reason: str) -> CheckResult:
     if not ctx.has_lighthouse:
         return not_assessed(f"{reason}", "Lighthouse/CrUX")
-    return not_assessed("Lighthouse key supplied but PageSpeed Insights call not implemented.",
-                        "Lighthouse/CrUX")
+    return not_assessed(
+        "Lighthouse key supplied but no PageSpeed Insights result resolved "
+        "(API error, quota, or unreachable URLs).",
+        "PageSpeed Insights",
+    )
+
+
+def _binary_fail(entry: dict) -> bool:
+    score = entry.get("score")
+    return score is not None and score < 0.9
+
+
+def _psi_assess(ctx, audit_keys: tuple[str, ...], fail_fn) -> Optional[CheckResult]:
+    """Evaluate a CWV check from PSI results. None when PSI has no data for it
+    (caller falls back to its gate or static heuristic)."""
+    if ctx.psi_results is None:
+        return None
+    affected: list[str] = []
+    assessed = 0
+    for url, res in ctx.psi_results.items():
+        audits = res.get("audits", {})
+        entry = next((audits[k] for k in audit_keys if k in audits), None)
+        if entry is None:
+            continue
+        assessed += 1
+        if fail_fn(entry):
+            affected.append(str(url))
+    if assessed == 0:
+        return None  # Lighthouse version lacks this audit; let caller fall back
+    note = f"{assessed} URL(s) assessed via PageSpeed Insights."
+    if affected:
+        return CheckResult(PRESENT, "PageSpeed Insights", affected, note)
+    return CheckResult(NOT_PRESENT, "PageSpeed Insights", note=note)
 
 
 def _cwv_partial(ctx, affected: list[str], source: str, note: str = "") -> CheckResult:

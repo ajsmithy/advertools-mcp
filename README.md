@@ -104,8 +104,32 @@ Behaviour by tier:
 |------|-------------------|
 | CRAWL, CRAWL+ | Run by default. CRAWL+ may HEAD-crawl assets, fetch JS/CSS bodies, or test URL variants, capped at `audit_url_sample` (200) URLs. |
 | RENDER | Run only if `ADVTOOLS_ENABLE_RENDER=true`, else **Not assessed (requires rendering)**. |
-| CWV | Run only if `ADVTOOLS_LIGHTHOUSE_API_KEY` is set. Where a check has a static-heuristic part, that part runs regardless and is labelled **Heuristic**. |
+| CWV | Run via the PageSpeed Insights API when `ADVTOOLS_LIGHTHOUSE_API_KEY` is set (see below). Where a check has a static-heuristic part, that part runs regardless and is labelled **Heuristic**. |
 | EXTERNAL | Run only if GSC/backlink data is supplied, else **Not assessed**. |
+
+### Enabling the CWV tier (PageSpeed Insights)
+
+The ten CWV checks (LCP, CLS, image sizing/encoding, render-blocking resources,
+next-gen images, preload, third-party facades, …) measure runtime performance
+in a browser, which crawl data cannot provide. They run through Google's free
+**PageSpeed Insights API**:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create/select a
+   project, enable the **PageSpeed Insights API**, and create an **API key**
+   (free; generous daily quota).
+2. Set `ADVTOOLS_LIGHTHOUSE_API_KEY=<your key>` in the server's environment
+   (e.g. the `env` block of your MCP client config) and restart the server.
+
+With the key set, `run_audit` runs a Lighthouse pass for a sample of crawled
+HTML pages — shallowest-first, so the homepage and top templates lead — capped
+at `ADVTOOLS_PSI_URL_SAMPLE` (default 20, each pass takes ~15s) with strategy
+`ADVTOOLS_PSI_STRATEGY` (`mobile` default, or `desktop`). CWV checks then report
+real **Present/Not present** verdicts with the failing URLs; the Summary sheet
+records the PSI strategy, sample cap, and URLs assessed. If a PSI call fails or
+a Lighthouse version lacks an audit, the check falls back to its heuristic or
+reports **Not assessed** — never a fabricated verdict. PSI loads pages from
+Google's infrastructure (≤4 concurrent), so it does not consume the crawl's
+politeness budget against your server.
 
 **Hard rule:** a check that could not be evaluated is never recorded as a
 pass/fail. The only states are: **Present**, **Not present**, **Not assessed**,
@@ -243,6 +267,8 @@ docker run -p 8000:8000 -v advertools-data:/data/crawls \
 | `ADVTOOLS_MAX_JOB_RUNTIME` | `3600` | Per-job runtime cap (s) |
 | `ADVTOOLS_AUDIT_URL_SAMPLE` | `200` | Max URLs for any per-URL extra fetch |
 | `ADVTOOLS_LIGHTHOUSE_API_KEY` | _(blank)_ | Enables CWV tier (PageSpeed Insights) |
+| `ADVTOOLS_PSI_URL_SAMPLE` | `20` | Max URLs given a Lighthouse pass per audit (~15s each) |
+| `ADVTOOLS_PSI_STRATEGY` | `mobile` | PSI strategy: `mobile` or `desktop` |
 | `ADVTOOLS_ENABLE_RENDER` | `false` | Enables RENDER tier |
 | `ADVTOOLS_GSC_CREDENTIALS` | _(blank)_ | Enables EXTERNAL tier |
 | `ADVTOOLS_TRANSPORT` | `stdio` | `stdio` or `http` |

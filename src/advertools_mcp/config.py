@@ -98,6 +98,15 @@ class Settings:
     lighthouse_api_key: str = field(
         default_factory=lambda: os.getenv("ADVTOOLS_LIGHTHOUSE_API_KEY", "")
     )
+    # PageSpeed Insights runs a full Lighthouse pass per URL (~15s each), so the
+    # CWV sample is much smaller than the generic fetch sample. Still hard-capped
+    # by audit_url_sample.
+    psi_url_sample: int = field(
+        default_factory=lambda: _env_int("ADVTOOLS_PSI_URL_SAMPLE", 20)
+    )
+    psi_strategy: str = field(
+        default_factory=lambda: os.getenv("ADVTOOLS_PSI_STRATEGY", "mobile")
+    )
     enable_render: bool = field(
         default_factory=lambda: _env_bool("ADVTOOLS_ENABLE_RENDER", False)
     )
