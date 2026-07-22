@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 
 from .config import get_settings
@@ -61,6 +62,10 @@ def main() -> int:
         uvicorn.run(app, host=settings.host, port=settings.port)
         return 0
 
+    # stdio transport uses stdout for the JSON-RPC stream, so nothing else may
+    # write there. Pin all logging to stderr in case a library (advertools, httpx)
+    # loaded for the robots/sitemap tools installs a stdout handler.
+    logging.basicConfig(stream=sys.stderr, level=logging.WARNING, force=True)
     mcp.run(transport="stdio")
     return 0
 
