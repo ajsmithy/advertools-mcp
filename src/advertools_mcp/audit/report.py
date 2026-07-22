@@ -26,10 +26,18 @@ def _style_header(ws, ncols: int) -> None:
         cell.fill = _HEADER_FILL
 
 
-def _autosize(ws, max_width: int = 80) -> None:
-    for col_cells in ws.columns:
-        length = max((len(str(c.value)) for c in col_cells if c.value is not None), default=10)
-        ws.column_dimensions[get_column_letter(col_cells[0].column)].width = min(length + 2, max_width)
+def _autosize(ws, max_width: int = 80, sample_rows: int = 200) -> None:
+    # Width from a bounded sample: scanning every cell of a large sheet
+    # (e.g. Crawl Detail at 3000 rows x 54 cols) is pure overhead.
+    widths: dict[int, int] = {}
+    for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, sample_rows)):
+        for cell in row:
+            if cell.value is not None:
+                length = len(str(cell.value))
+                if length > widths.get(cell.column, 0):
+                    widths[cell.column] = length
+    for col, length in widths.items():
+        ws.column_dimensions[get_column_letter(col)].width = min(max(length, 10) + 2, max_width)
 
 
 def write_report(

@@ -222,6 +222,8 @@ docker run -p 8000:8000 -v advertools-data:/data/crawls \
 | `ADVTOOLS_GSC_CREDENTIALS` | _(blank)_ | Enables EXTERNAL tier |
 | `ADVTOOLS_TRANSPORT` | `stdio` | `stdio` or `http` |
 | `ADVTOOLS_BEARER_TOKEN` | _(blank)_ | Required for remote |
+| `ADVTOOLS_RATE_LIMIT_REQUESTS` | `120` | Remote: max requests per client per window |
+| `ADVTOOLS_RATE_LIMIT_WINDOW` | `60` | Remote: rate-limit window (seconds) |
 | `ADVTOOLS_DOMAIN_ALLOWLIST` | _(empty)_ | Required non-empty for remote |
 
 > **Note — `contact_url`.** The Inputs block flags `contact_url` as *to confirm*.

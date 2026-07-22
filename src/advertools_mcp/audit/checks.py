@@ -94,12 +94,12 @@ def _parse_disallows(ctx: AuditContext) -> list[str]:
     return disallows
 
 
-def _path_blocked(path: str, disallows: list[str]) -> bool:
-    for rule in disallows:
-        pattern = re.escape(rule).replace(r"\*", ".*")
-        if re.match(pattern, path):
-            return True
-    return False
+def _compile_disallows(disallows: list[str]) -> list[re.Pattern]:
+    return [re.compile(re.escape(rule).replace(r"\*", ".*")) for rule in disallows]
+
+
+def _path_blocked(path: str, compiled: list[re.Pattern]) -> bool:
+    return any(pattern.match(path) for pattern in compiled)
 
 
 def _indexable_map(ctx: AuditContext) -> dict[str, bool]:
@@ -259,8 +259,9 @@ def c14(ctx):
     disallows = _parse_disallows(ctx)
     if not disallows and ctx.robots_url is None:
         return not_assessed("robots.txt not fetched.", "robots.txt")
+    compiled = _compile_disallows(disallows)
     assets = _collect_assets(ctx, ["script_src", "stylesheet_href"])
-    blocked = [a for a in assets if _path_blocked(urlparse(a).path, disallows)]
+    blocked = [a for a in assets if _path_blocked(urlparse(a).path, compiled)]
     return finding(blocked, "robots.txt rule match")
 
 
@@ -365,10 +366,15 @@ def c27(ctx):
 @check(28)  # Eliminate Render-Blocking Resources (CWV, partial heuristic)
 def c28(ctx):
     bad = []
-    for url, scripts in _list_col_items(ctx, "head_script_src"):
-        styles = S.split_list(ctx.df.loc[ctx.df[S.COL_URL] == url, "head_stylesheet_href"].iloc[0]) \
-            if "head_stylesheet_href" in ctx.columns and (ctx.df[S.COL_URL] == url).any() else []
-        if scripts or styles:
+    styles_col = (
+        ctx.df["head_stylesheet_href"]
+        if "head_stylesheet_href" in ctx.columns
+        else [None] * len(ctx.df)
+    )
+    for url, raw_scripts, raw_styles in zip(
+        ctx.col(S.COL_URL), ctx.col("head_script_src"), styles_col
+    ):
+        if S.split_list(raw_scripts) or S.split_list(raw_styles):
             bad.append(str(url))
     return _cwv_partial(ctx, bad, "head sync script/stylesheet (heuristic)")
 
@@ -390,14 +396,15 @@ def c30(ctx):
         return CheckResult(NOT_PRESENT, "jsonld parse", note="No JSON-LD found.")
     type_col = next((c for c in has_jsonld if c.lower().endswith("@type")), None)
     ctx_col = next((c for c in has_jsonld if c.lower().endswith("@context")), None)
-    bad = []
-    for i, url in enumerate(ctx.col(S.COL_URL)):
-        t = ctx.df[type_col].iloc[i] if type_col else None
-        c = ctx.df[ctx_col].iloc[i] if ctx_col else None
-        # JSON-LD present (some jsonld col non-null) but missing @type/@context.
-        present = any(pd.notna(ctx.df[col].iloc[i]) for col in has_jsonld)
-        if present and (pd.isna(t) or pd.isna(c)):
-            bad.append(str(url))
+    # JSON-LD present (some jsonld col non-null) but missing @type/@context.
+    present = ctx.df[has_jsonld].notna().any(axis=1)
+    types = ctx.col(type_col) if type_col else pd.Series([None] * len(ctx.df))
+    contexts = ctx.col(ctx_col) if ctx_col else pd.Series([None] * len(ctx.df))
+    bad = [
+        str(url)
+        for url, has_any, t, c in zip(ctx.col(S.COL_URL), present, types, contexts)
+        if has_any and (pd.isna(t) or pd.isna(c))
+    ]
     return finding(bad, "jsonld schema validation")
 
 
@@ -442,11 +449,13 @@ def c37(ctx):
     if ctx.sitemap_df is None or "loc" not in (ctx.sitemap_df.columns if ctx.sitemap_df is not None else []):
         return not_assessed("No sitemap data available.", "sitemap")
     sitemap_urls = set(ctx.sitemap_df["loc"].astype(str))
-    bad = []
     body_len = ctx.col(S.COL_BODY_TEXT).fillna("").astype(str).str.len()
-    for i, url in enumerate(ctx.col(S.COL_URL)):
-        if str(url) in sitemap_urls and ctx.status_int().iloc[i] == 200 and body_len.iloc[i] < 200:
-            bad.append(str(url))
+    status = ctx.status_int()
+    bad = [
+        str(url)
+        for url, code, blen in zip(ctx.col(S.COL_URL), status, body_len)
+        if str(url) in sitemap_urls and code == 200 and blen < 200
+    ]
     return finding(bad, "sitemap URL thin body", heuristic=True)
 
 
@@ -561,14 +570,13 @@ def c48(ctx):
 @check(49)  # Mixed Content (CRAWL)
 def c49(ctx):
     bad = []
-    cols = ["script_src", "stylesheet_href", S.COL_IMG_SRC, S.COL_LINKS_URL]
-    for i, url in enumerate(ctx.col(S.COL_URL)):
+    cols = [c for c in ("script_src", "stylesheet_href", S.COL_IMG_SRC, S.COL_LINKS_URL)
+            if c in ctx.columns]
+    ref_series = [ctx.df[c] for c in cols]
+    for url, *raws in zip(ctx.col(S.COL_URL), *ref_series):
         if not str(url).lower().startswith("https://"):
             continue
-        refs = []
-        for col in cols:
-            if col in ctx.columns:
-                refs += S.split_list(ctx.df[col].iloc[i])
+        refs = [item for raw in raws for item in S.split_list(raw)]
         if any(str(r).lower().startswith("http://") for r in refs):
             bad.append(str(url))
     return finding(bad, "https page referencing http assets")
@@ -705,9 +713,11 @@ def c65(ctx):
 def c66(ctx):
     idx = _indexable_map(ctx)
     bad = []
-    for i, url in enumerate(ctx.col(S.COL_URL)):
-        links = S.split_list(ctx.df[S.COL_LINKS_URL].iloc[i]) if S.COL_LINKS_URL in ctx.columns else []
-        nofollows = S.split_list(ctx.df[S.COL_LINKS_NOFOLLOW].iloc[i]) if S.COL_LINKS_NOFOLLOW in ctx.columns else []
+    for url, raw_links, raw_nf in zip(
+        ctx.col(S.COL_URL), ctx.col(S.COL_LINKS_URL), ctx.col(S.COL_LINKS_NOFOLLOW)
+    ):
+        links = S.split_list(raw_links)
+        nofollows = S.split_list(raw_nf)
         for j, link in enumerate(links):
             nf = j < len(nofollows) and str(nofollows[j]).lower() == "true"
             host = urlparse(str(link)).netloc.lower()
@@ -819,8 +829,9 @@ def c80(ctx):
     disallows = _parse_disallows(ctx)
     if not disallows and ctx.robots_url is None:
         return not_assessed("robots.txt not fetched.", "robots.txt")
+    compiled = _compile_disallows(disallows)
     imgs = _collect_assets(ctx, [S.COL_IMG_SRC])
-    blocked = [a for a in imgs if _path_blocked(urlparse(a).path, disallows)]
+    blocked = [a for a in imgs if _path_blocked(urlparse(a).path, compiled)]
     return finding(blocked, "robots.txt rule match")
 
 
@@ -998,9 +1009,11 @@ def _schema_type_presence(ctx, schema_type: str, advisory: bool = False) -> Chec
 
 def _crawlable_param_links(ctx, params: set[str]) -> CheckResult:
     bad = []
-    for i, url in enumerate(ctx.col(S.COL_URL)):
-        links = S.split_list(ctx.df[S.COL_LINKS_URL].iloc[i]) if S.COL_LINKS_URL in ctx.columns else []
-        nofollows = S.split_list(ctx.df[S.COL_LINKS_NOFOLLOW].iloc[i]) if S.COL_LINKS_NOFOLLOW in ctx.columns else []
+    for url, raw_links, raw_nf in zip(
+        ctx.col(S.COL_URL), ctx.col(S.COL_LINKS_URL), ctx.col(S.COL_LINKS_NOFOLLOW)
+    ):
+        links = S.split_list(raw_links)
+        nofollows = S.split_list(raw_nf)
         for j, link in enumerate(links):
             if _query_params(link) & params:
                 nf = j < len(nofollows) and str(nofollows[j]).lower() == "true"
