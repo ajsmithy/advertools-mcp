@@ -247,7 +247,8 @@ def c13(ctx):
     assets = _collect_assets(ctx, ["script_src", "stylesheet_href"])
     if not assets:
         return CheckResult(NOT_PRESENT, "asset HEAD-crawl", note="No JS/CSS assets found.")
-    statuses = fetch.head_statuses(assets, ctx.settings.audit_url_sample, ctx.settings.default_user_agent)
+    statuses = fetch.head_statuses(assets, ctx.settings.audit_url_sample, ctx.settings.default_user_agent,
+                                 rate=ctx.settings.default_crawl_speed)
     if statuses is None:
         return not_assessed("Asset HEAD-crawl could not reach any asset.", "asset HEAD-crawl")
     broken = [u for u, code in statuses.items() if code >= 400]
@@ -475,7 +476,8 @@ def c39(ctx):
     sitemaps = re.findall(r"(?im)^\s*sitemap\s*:\s*(\S+)", text)
     if not sitemaps:
         return not_assessed("No Sitemap: directive to validate.", "robots.txt")
-    statuses = fetch.head_statuses(sitemaps, ctx.settings.audit_url_sample, ctx.settings.default_user_agent)
+    statuses = fetch.head_statuses(sitemaps, ctx.settings.audit_url_sample, ctx.settings.default_user_agent,
+                                 rate=ctx.settings.default_crawl_speed)
     if statuses is None:
         return not_assessed("Could not fetch robots.txt Sitemap: URLs.", "sitemap")
     bad = [u for u, code in statuses.items() if code >= 400]
@@ -496,7 +498,8 @@ def c41(ctx):
     imgs = _collect_assets(ctx, [S.COL_IMG_SRC])
     if not imgs:
         return CheckResult(NOT_PRESENT, "image HEAD-crawl", note="No images found.")
-    statuses = fetch.head_statuses(imgs, ctx.settings.audit_url_sample, ctx.settings.default_user_agent)
+    statuses = fetch.head_statuses(imgs, ctx.settings.audit_url_sample, ctx.settings.default_user_agent,
+                                 rate=ctx.settings.default_crawl_speed)
     if statuses is None:
         return not_assessed("Image HEAD-crawl could not reach any image.", "image HEAD-crawl")
     broken = [u for u, code in statuses.items() if code >= 400]
@@ -527,7 +530,8 @@ def c45(ctx):
     if not assets:
         return CheckResult(NOT_PRESENT, "asset HEAD-crawl", note="No static assets found.")
     sample = assets[: ctx.settings.audit_url_sample]
-    bodies = fetch.head_statuses(sample, ctx.settings.audit_url_sample, ctx.settings.default_user_agent)
+    bodies = fetch.head_statuses(sample, ctx.settings.audit_url_sample, ctx.settings.default_user_agent,
+                                 rate=ctx.settings.default_crawl_speed)
     if bodies is None:
         return not_assessed("Could not HEAD-crawl static assets for cache headers.", "asset HEAD-crawl")
     # We only confirmed reachability here; cache-header inspection needs response
@@ -539,7 +543,8 @@ def c45(ctx):
 @check(46)  # Avoid document.write() (CRAWL+)
 def c46(ctx):
     scripts = _collect_assets(ctx, ["script_src"])
-    bodies = fetch.fetch_bodies(scripts, ctx.settings.audit_url_sample, ctx.settings.default_user_agent)
+    bodies = fetch.fetch_bodies(scripts, ctx.settings.audit_url_sample, ctx.settings.default_user_agent,
+                                 rate=ctx.settings.default_crawl_speed)
     if bodies is None:
         # Fall back to inline HTML body_text scan.
         bad = ctx.urls_where(ctx.col(S.COL_BODY_TEXT).astype(str).str.contains("document.write", na=False))
@@ -623,7 +628,8 @@ def c53(ctx):
 @check(54)  # Font Loading: @import (CRAWL+)
 def c54(ctx):
     css = _collect_assets(ctx, ["stylesheet_href"])
-    bodies = fetch.fetch_bodies(css, ctx.settings.audit_url_sample, ctx.settings.default_user_agent)
+    bodies = fetch.fetch_bodies(css, ctx.settings.audit_url_sample, ctx.settings.default_user_agent,
+                                 rate=ctx.settings.default_crawl_speed)
     if bodies is None:
         if not css:
             return CheckResult(NOT_PRESENT, "CSS fetch", note="No stylesheets found.")
@@ -844,7 +850,8 @@ def c81(ctx):
     if ctx.settings.audit_url_sample:
         sample = ctx.col(S.COL_URL).astype(str).tolist()
         bodies = fetch.fetch_bodies(sample, min(ctx.settings.audit_url_sample, 50),
-                                    ctx.settings.default_user_agent)
+                                    ctx.settings.default_user_agent,
+                                    rate=ctx.settings.default_crawl_speed)
     if bodies is None:
         return not_assessed("Detecting onclick-only navigation needs raw HTML refetch.", "HTML refetch")
     bad = [u for u, body in bodies.items() if re.search(r"<a(?![^>]*href=)[^>]*onclick=", body, re.I)]
@@ -861,7 +868,8 @@ def c82(ctx):
         f"http://{ctx.primary_host}/",
         f"https://www.{ctx.primary_host}/" if not ctx.primary_host.startswith("www.") else f"https://{ctx.primary_host[4:]}/",
     ]
-    statuses = fetch.head_statuses(variants, ctx.settings.audit_url_sample, ctx.settings.default_user_agent)
+    statuses = fetch.head_statuses(variants, ctx.settings.audit_url_sample, ctx.settings.default_user_agent,
+                                 rate=ctx.settings.default_crawl_speed)
     if statuses is None:
         return not_assessed("Could not fetch host variants to test canonicalisation.", "variant fetch")
     # Heuristic: a 200 (not redirect) on a non-canonical variant is a finding.
@@ -969,7 +977,8 @@ def _collect_assets(ctx, columns: list[str]) -> list[str]:
 
 def _minify_check(ctx, col: str, exts: tuple[str, ...]) -> CheckResult:
     assets = [a for a in _collect_assets(ctx, [col]) if a.lower().split("?")[0].endswith(exts)]
-    bodies = fetch.fetch_bodies(assets, ctx.settings.audit_url_sample, ctx.settings.default_user_agent)
+    bodies = fetch.fetch_bodies(assets, ctx.settings.audit_url_sample, ctx.settings.default_user_agent,
+                                 rate=ctx.settings.default_crawl_speed)
     if bodies is None:
         if not assets:
             return CheckResult(NOT_PRESENT, "asset fetch", note="No matching assets found.")

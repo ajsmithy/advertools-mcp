@@ -139,6 +139,26 @@ Triggers:
 - `allowed_domains` unset on a discovery crawl,
 - (remote) a target host not on the domain allowlist.
 
+## Politeness guarantees (rate capping)
+
+The default crawl rate — **5 URLs/second per host** — is a *hard ceiling* on
+every network path, not an average:
+
+- **Crawls (Scrapy):** `DOWNLOAD_DELAY = 1/crawl_speed` with per-domain
+  concurrency pinned to 1 and delay randomisation disabled, so the crawler can
+  never exceed the requested rate against one host. AutoThrottle can only slow
+  it further when the server struggles.
+- **Audit extra fetches (CRAWL+ asset HEADs, JS/CSS bodies, variant tests):**
+  a process-wide per-host limiter paces requests to any single host at the same
+  crawl-speed rate. Thread-pool parallelism only speeds up fetches that span
+  *different* hosts (site + CDN + external assets).
+- **Sitemap fetching:** recursive sitemap-index fetches are capped at 2
+  concurrent requests (advertools' default is 8).
+
+`tests/test_fetch_rate_limit.py` proves same-host fetches respect the schedule
+while cross-host fetches stay parallel, and that the Scrapy settings form a
+strict cap.
+
 ## Local setup (stdio)
 
 ```bash
