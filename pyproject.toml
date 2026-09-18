@@ -29,6 +29,7 @@ render = ["playwright>=1.40"]
 
 [project.scripts]
 advertools-mcp = "advertools_mcp.__main__:main"
+advertools-audit = "advertools_mcp.audit_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/advertools_mcp"]

@@ -22,7 +22,7 @@ from .config import (
     with_runtime_overrides,
 )
 from .crawl import analysis, csv_export, parquet_query, summary
-from .jobs import JobKind, JobManager, JobState, JobStore
+from .jobs import AuditManager, JobKind, JobManager, JobState, JobStore
 from .security import enforce_domain_allowlist
 from .validation import evaluate_crawl_config, needs_confirmation_response
 
@@ -30,6 +30,7 @@ from .validation import evaluate_crawl_config, needs_confirmation_response
 _settings: Settings
 _store: JobStore
 _manager: JobManager
+_audit_manager: AuditManager
 
 
 def _crawl_custom_settings(
@@ -94,12 +95,13 @@ def _require_done(job_id: str):
 
 
 def build_server(settings: Optional[Settings] = None) -> FastMCP:
-    global _settings, _store, _manager
+    global _settings, _store, _manager, _audit_manager
     _settings = settings or get_settings()
     _settings.ensure_dirs()
     _store = JobStore(_settings.jobs_dir)
     _store.reconcile_orphans()
     _manager = JobManager(_settings, _store)
+    _audit_manager = AuditManager(_settings, _store)
 
     mcp = FastMCP(_settings.server_name)
 
@@ -443,6 +445,74 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
             return {"error": str(exc)}
 
     @mcp.tool()
+    async def start_audit(
+        job_id: str,
+        has_backlinks: bool = False,
+        lighthouse_api_key: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Start the SEO audit over a saved crawl as an async job. Returns an
+        audit_job_id immediately; poll audit_status. Prefer this over run_audit
+        for large crawls — a synchronous audit can exceed a client's response
+        timeout."""
+        record = _require_done(job_id)
+        follow_links = record.params.get("follow_links")
+        effective = _effective_audit_settings(lighthouse_api_key)
+        parquet = record.output_parquet
+
+        def _run() -> dict[str, Any]:
+            from .audit.engine import run_audit as _a
+            return _a(parquet, effective, _settings.audits_dir, has_backlinks=has_backlinks,
+                      is_discovery=bool(follow_links) if follow_links is not None else None)
+
+        rec = _audit_manager.submit(
+            JobKind.AUDIT, {"crawl_job_id": job_id}, _run
+        )
+        return {"status": "started", "audit_job_id": rec.job_id,
+                "message": "Audit launched. Poll audit_status with the audit_job_id."}
+
+    @mcp.tool()
+    async def start_audit_from_folder(
+        folder: str,
+        has_backlinks: bool = False,
+        lighthouse_api_key: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Start the audit over an imported crawl-data folder (Screaming Frog) as
+        an async job. Returns an audit_job_id immediately; poll audit_status.
+        Prefer this over run_audit_from_folder for large datasets."""
+        if not folder or not Path(folder).is_dir():
+            return {"error": f"Not a folder: {folder!r}. Provide a path to a folder of Screaming Frog exports."}
+        effective = _effective_audit_settings(lighthouse_api_key)
+
+        def _run() -> dict[str, Any]:
+            from .audit.engine import run_audit_from_folder as _a
+            return _a(folder, effective, _settings.audits_dir, has_backlinks=has_backlinks)
+
+        rec = _audit_manager.submit(
+            JobKind.AUDIT_FOLDER, {"folder": folder}, _run
+        )
+        return {"status": "started", "audit_job_id": rec.job_id,
+                "message": "Audit launched. Poll audit_status with the audit_job_id."}
+
+    @mcp.tool()
+    async def audit_status(audit_job_id: str) -> dict[str, Any]:
+        """State of an async audit job. When done, returns the audit summary
+        (audit_id, xlsx path, counts by status/tier)."""
+        record = _audit_manager.status(audit_job_id)
+        if record is None:
+            return {"error": f"Unknown audit_job_id: {audit_job_id}"}
+        d = record.to_dict()
+        out = {
+            "audit_job_id": record.job_id,
+            "kind": record.kind,
+            "state": record.state,
+            "runtime_seconds": d["runtime_seconds"],
+            "error_message": record.error_message,
+        }
+        if record.state == JobState.DONE.value and record.result:
+            out["summary"] = record.result
+        return out
+
+    @mcp.tool()
     async def configure_audit(
         lighthouse_api_key: Optional[str] = None,
         psi_url_sample: Optional[int] = None,
@@ -498,6 +568,17 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
 
 
 # ----------------------------------------------------------- impl (threaded)
+def _effective_audit_settings(lighthouse_api_key: Optional[str] = None) -> Settings:
+    """Settings with the persisted runtime overrides (and an optional per-call
+    Lighthouse key) applied — used by the async audit jobs."""
+    import dataclasses
+
+    effective = with_runtime_overrides(_settings)
+    if lighthouse_api_key:
+        effective = dataclasses.replace(effective, lighthouse_api_key=lighthouse_api_key)
+    return effective
+
+
 def _mask_secret(key: str, value) -> str:
     """Mask secret values in tool responses (show only a recognisable tail)."""
     if key in ("lighthouse_api_key", "gsc_credentials"):

@@ -25,6 +25,8 @@ class JobKind(str, Enum):
     CRAWL = "crawl"
     HEADER_CRAWL = "header_crawl"
     IMAGE_CRAWL = "image_crawl"
+    AUDIT = "audit"
+    AUDIT_FOLDER = "audit_folder"
 
 
 def _new_id(kind: JobKind) -> str:
@@ -56,6 +58,8 @@ class JobRecord:
     error_message: str | None = None
     finish_reason: str | None = None
     pid: int | None = None
+    # Arbitrary worker result (e.g. an audit summary) for non-crawl jobs.
+    result: dict[str, Any] | None = None
 
     @classmethod
     def create(cls, kind: JobKind, params: dict[str, Any]) -> "JobRecord":

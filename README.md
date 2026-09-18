@@ -62,9 +62,10 @@ client ──tool──▶ MCP server (always responsive)
 
 **robots.txt** — `parse_robots`, `test_robots`.
 **XML sitemaps** — `fetch_sitemap` (recursive index, news, video; can seed a list crawl).
-**Audit** — `run_audit` (over an advertools crawl), `run_audit_from_folder`
-(over an imported Screaming Frog export folder), `get_audit_summary`,
-`configure_audit`.
+**Audit** — `run_audit` / `run_audit_from_folder` (synchronous, for small
+datasets), `start_audit` / `start_audit_from_folder` + `audit_status` (async
+jobs — use these for large datasets so the audit never blocks the tool call),
+`get_audit_summary`, `configure_audit`.
 
 ## Crawl-detail export
 
@@ -203,6 +204,26 @@ columns. The result lists which data signals were available, and the CWV and
 RENDER tiers still apply if you've enabled Lighthouse/rendering (they re-fetch
 the URLs from the dataset). This mirrors how `run_audit` works over a native
 crawl — same 91 checks, same honesty rules.
+
+### Large audits: async jobs and the CLI
+
+An audit over a large dataset (hundreds of URLs, plus live robots/sitemap
+fetches and any CWV/render passes) can take longer than an MCP client's
+response timeout. Two ways to handle it:
+
+- **Async audit tools** — `start_audit(job_id)` / `start_audit_from_folder(folder)`
+  return an `audit_job_id` immediately; poll `audit_status(audit_job_id)` until
+  `state` is `done`, then read the summary. This mirrors the crawl job model and
+  never blocks the tool call.
+- **Terminal CLI** — run the audit outside the MCP cycle entirely (no timeout),
+  then point your client at the resulting workbook:
+
+  ```bash
+  advertools-audit --folder /path/to/screamingfrog-export
+  advertools-audit --crawl  ./data/crawls/<job>/crawl.parquet --lighthouse-key AIza...
+  ```
+
+  It prints a JSON summary (including the `.xlsx` path) to stdout.
 
 
 
