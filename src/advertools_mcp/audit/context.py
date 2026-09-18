@@ -65,6 +65,11 @@ class AuditContext:
     # Headless render results: {url: metrics dict} from audit.render.
     # None means rendering was disabled or the browser stack is unavailable.
     render_results: Optional[dict] = None
+    # For imported datasets (e.g. Screaming Frog), the set of data signals the
+    # source actually provides. None means an advertools crawl (full schema, no
+    # gating). See audit.signals.
+    available_signals: Optional[set] = None
+    source: str = "advertools-crawl"
 
     # Optional external sources.
     has_lighthouse: bool = False

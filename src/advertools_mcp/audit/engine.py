@@ -108,11 +108,66 @@ def run_audit(
     catalogue_path: str | None = None,
     is_discovery: bool | None = None,
 ) -> dict[str, Any]:
-    """Run the full audit over a saved crawl. Returns a compact summary dict."""
+    """Run the full audit over a saved advertools crawl. Returns a summary dict."""
     if not Path(crawl_parquet).exists():
         raise FileNotFoundError(f"Crawl parquet not found: {crawl_parquet}")
-
     df = pd.read_parquet(crawl_parquet)
+    return _run_audit_over_df(
+        df, settings, audits_dir,
+        has_backlinks=has_backlinks, catalogue_path=catalogue_path,
+        is_discovery=is_discovery, source="advertools-crawl",
+        available_signals=None, origin=crawl_parquet,
+    )
+
+
+def run_audit_from_folder(
+    folder: str,
+    settings: Settings,
+    audits_dir: Path,
+    has_backlinks: bool = False,
+    catalogue_path: str | None = None,
+) -> dict[str, Any]:
+    """Run the audit over an imported crawl-data folder (Screaming Frog exports).
+
+    Every URL in the dataset is assessed. Checks whose required data signal is
+    absent from the export report "Not assessed" rather than a false verdict.
+    """
+    from .ingest import ingest_folder
+
+    ingest = ingest_folder(folder)
+    # A Screaming Frog spider crawl is a discovery crawl; orphan detection (#91)
+    # is meaningful when the link graph (outlinks export) is present.
+    is_discovery = True if "links" in ingest.available_signals else None
+    summary = _run_audit_over_df(
+        ingest.df, settings, audits_dir,
+        has_backlinks=has_backlinks, catalogue_path=catalogue_path,
+        is_discovery=is_discovery, source=ingest.source,
+        available_signals=ingest.available_signals, origin=folder,
+    )
+    summary["ingest"] = {
+        "source": ingest.source,
+        "rows": ingest.row_count,
+        "files_used": ingest.files_used,
+        "signals_available": sorted(ingest.available_signals),
+        "warnings": ingest.warnings,
+    }
+    return summary
+
+
+def _run_audit_over_df(
+    df: "pd.DataFrame",
+    settings: Settings,
+    audits_dir: Path,
+    *,
+    has_backlinks: bool,
+    catalogue_path: str | None,
+    is_discovery: bool | None,
+    source: str,
+    available_signals: set | None,
+    origin: str,
+) -> dict[str, Any]:
+    from .signals import CHECK_SIGNALS, LIVE_TIER_BYPASS
+
     checks = load_catalogue(catalogue_path)
 
     # Build context, fetching robots + sitemap best-effort.
@@ -124,6 +179,8 @@ def run_audit(
         has_gsc=bool(settings.gsc_credentials),
         has_backlinks=has_backlinks,
         is_discovery=is_discovery,
+        available_signals=available_signals,
+        source=source,
     )
     robots_url, robots_text = _load_robots(ctx.primary_host, settings.default_user_agent)
     ctx.robots_url, ctx.robots_text = robots_url, robots_text
@@ -165,13 +222,20 @@ def run_audit(
     if ctx.has_render:
         config.extra["Render sample cap"] = settings.render_url_sample
         config.extra["Render URLs assessed"] = render_urls_assessed
+    if available_signals is not None:
+        config.extra["Data source"] = source
+        config.extra["URLs in dataset"] = len(df)
+        config.extra["Signals available"] = ", ".join(sorted(available_signals))
 
     results: list[dict[str, Any]] = []
     detail_rows: list[dict[str, Any]] = []
     for cdef in checks:
         fn = CHECKS.get(cdef.num)
-        if fn is None:
-            res: CheckResult = not_assessed("No implementation registered.", "—")
+        gate = _signal_gate(ctx, cdef, CHECK_SIGNALS, LIVE_TIER_BYPASS)
+        if gate is not None:
+            res: CheckResult = gate
+        elif fn is None:
+            res = not_assessed("No implementation registered.", "—")
         else:
             try:
                 res = fn(ctx)
@@ -198,7 +262,13 @@ def run_audit(
     audit_id = f"audit-{uuid.uuid4().hex[:12]}"
     audits_dir.mkdir(parents=True, exist_ok=True)
     out_path = audits_dir / f"{audit_id}.xlsx"
+    # Embed the per-URL detail, but cap a very large imported dataset so the
+    # workbook stays openable (all URLs are still assessed in the findings).
     crawl_detail = build_export_frame(df)
+    embed_cap = 5000
+    if len(crawl_detail) > embed_cap:
+        crawl_detail = crawl_detail.head(embed_cap)
+        config.extra["Crawl Detail sheet"] = f"first {embed_cap} of {len(df)} URLs"
     write_report(out_path, results, detail_rows, config, crawl_detail)
 
     summary = _summarise(results)
@@ -206,12 +276,32 @@ def run_audit(
         {
             "audit_id": audit_id,
             "audit_xlsx": str(out_path),
-            "crawl_parquet": crawl_parquet,
+            "source": source,
+            "origin": origin,
+            "urls_assessed": len(df),
             "total_checks": len(results),
             "config": dict(config.as_rows()),
         }
     )
     return summary
+
+
+def _signal_gate(ctx, cdef, check_signals, live_bypass):
+    """For imported datasets, gate a check to Not assessed when a required data
+    signal is absent. Returns a CheckResult to use, or None to run the check."""
+    if ctx.available_signals is None:
+        return None  # advertools crawl: full schema, no gating
+    bypass_attr = live_bypass.get(cdef.tier)
+    if bypass_attr and getattr(ctx, bypass_attr, False):
+        return None  # live tier source active (Lighthouse/render): let it run
+    missing = [s for s in check_signals.get(cdef.num, ()) if s not in ctx.available_signals]
+    if missing:
+        return not_assessed(
+            f"Requires {', '.join(missing)} data, which the {ctx.source} export "
+            f"does not provide.",
+            "dataset (field absent)",
+        )
+    return None
 
 
 def _summarise(results: list[dict[str, Any]]) -> dict[str, Any]:

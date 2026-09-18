@@ -411,6 +411,38 @@ def build_server(settings: Optional[Settings] = None) -> FastMCP:
         )
 
     @mcp.tool()
+    async def run_audit_from_folder(
+        folder: str,
+        has_backlinks: bool = False,
+        lighthouse_api_key: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Run the SEO audit over a folder of imported crawl data (Screaming Frog).
+
+        Point this at a folder of Screaming Frog CSV/Excel exports — at minimum
+        the **Internal:All** export (a CSV with an 'Address' column); optionally
+        the **All Outlinks** and **Images** exports in the same folder to unlock
+        the link-graph and image checks. Every URL in the dataset is assessed.
+        Checks whose required data is not present in the export report
+        'Not assessed' (never a false verdict). Returns audit_id + summary,
+        including which data signals were available.
+        """
+        import dataclasses
+
+        from .audit.engine import run_audit_from_folder as _run
+
+        if not folder or not Path(folder).is_dir():
+            return {"error": f"Not a folder: {folder!r}. Provide a path to a folder of Screaming Frog exports."}
+        effective = with_runtime_overrides(_settings)
+        if lighthouse_api_key:
+            effective = dataclasses.replace(effective, lighthouse_api_key=lighthouse_api_key)
+        try:
+            return await asyncio.to_thread(
+                _run, folder, effective, _settings.audits_dir, has_backlinks=has_backlinks
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            return {"error": str(exc)}
+
+    @mcp.tool()
     async def configure_audit(
         lighthouse_api_key: Optional[str] = None,
         psi_url_sample: Optional[int] = None,
