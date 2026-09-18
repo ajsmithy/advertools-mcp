@@ -62,7 +62,9 @@ client ──tool──▶ MCP server (always responsive)
 
 **robots.txt** — `parse_robots`, `test_robots`.
 **XML sitemaps** — `fetch_sitemap` (recursive index, news, video; can seed a list crawl).
-**Audit** — `run_audit`, `get_audit_summary`.
+**Audit** — `run_audit` (over an advertools crawl), `run_audit_from_folder`
+(over an imported Screaming Frog export folder), `get_audit_summary`,
+`configure_audit`.
 
 ## Crawl-detail export
 
@@ -175,7 +177,34 @@ crawl-detail table embedded), **Detail** (offending URLs per failed check), and
 **Summary** (counts by status and tier + the audit configuration used). The full
 file is never returned inline.
 
-## Clarifying-confirmation behaviour
+## Auditing an imported Screaming Frog crawl
+
+You don't have to crawl with this server to use the audit. Point it at a folder
+of **Screaming Frog exports** and it audits every URL in the dataset:
+
+```
+run_audit_from_folder(folder="/path/to/sf-export")
+```
+
+Drop the exports into one folder:
+- **Internal → All** (required) — the core per-URL data (status, titles, meta,
+  headings, canonical, robots, redirects, indexability, word count, multiples).
+  Export as CSV or Excel; any file with an `Address` column is detected.
+- **Bulk Export → Links → All Outlinks** (optional) — unlocks the link-graph and
+  asset checks (internal-link issues, mixed content, nofollow, orphans, JS/CSS).
+- **Bulk Export → Images** (optional) — unlocks the image checks (broken images,
+  next-gen formats, robots-blocked images).
+
+**Every URL in the dataset is assessed** for the checks the export supports. A
+check whose required data isn't in the export (e.g. viewport, structured data,
+or "outside `<head>`" signals Screaming Frog doesn't expose) reports
+**Not assessed** naming the missing signal — never a false verdict from empty
+columns. The result lists which data signals were available, and the CWV and
+RENDER tiers still apply if you've enabled Lighthouse/rendering (they re-fetch
+the URLs from the dataset). This mirrors how `run_audit` works over a native
+crawl — same 91 checks, same honesty rules.
+
+
 
 Every tool has a typed schema with validation. `start_crawl` will not silently
 proceed on a high-impact config — it returns a structured `needs_confirmation`
